@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+qdrant_data/
+qdrant_storage/
+cache.db
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+*.png
+.mypy_cache/
+.ruff_cache/

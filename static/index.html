@@ -1,0 +1,27 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Semantic Cache</title><link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css"></head><body>
+<header><h1>Semantic Cache</h1><span id="cfg" class="mute"></span>
+<nav id="tabs"><button data-t="ask" class="on">Ask</button><button data-t="stats">Stats</button><button data-t="entries">Entries</button><button data-t="lab">Lab</button></nav>
+<div class="row"><input id="apikey" type="password" placeholder="API key (optional)" style="width:150px"></div></header>
+<main>
+<section id="ask" class="on"><div class="card"><h2>Ask a question</h2>
+<div class="row"><input type="text" id="q" placeholder="Try: How do I reset my password?" aria-label="Question"><button class="btn" id="go">Ask</button></div>
+<div class="row" style="margin-top:10px"><label>Namespace <input id="ns" value="default" size="10"></label>
+<label>Doc version <input id="ver" value="v1" size="5"></label><label>Tag <input id="tag" placeholder="e.g. faq" size="8"></label>
+<label><input type="checkbox" id="usec" checked> Use cache</label><label><input type="checkbox" id="stream" checked> Stream</label></div></div><div id="chat"><p class="empty">Ask the same thing twice, in different words, to see a cache hit.</p></div></section>
+<section id="stats"><div class="kpis" id="kpis"></div>
+<div class="card"><h2>Thresholds (adapt from your feedback)</h2><div class="row" id="thr"></div></div>
+<div class="card"><h2>Recent requests</h2><div class="scroll"><table id="recent"></table></div></div>
+<div class="card"><h2>Most reused entries</h2><div class="scroll"><table id="top"></table></div></div></section>
+<section id="entries"><div class="card"><div class="row"><h2 style="margin:0;flex:1">Cached entries</h2>
+<input id="invtag" placeholder="tag to invalidate" size="14"><button class="btn ghost" id="inv">Invalidate tag</button><button class="btn danger" id="clr">Clear all</button></div>
+<div class="scroll"><table id="etable"></table></div></div></section>
+<section id="lab"><div class="card"><h2>Warm the cache</h2><textarea id="warm" placeholder="One query per line"></textarea>
+<div class="row" style="margin-top:8px"><button class="btn" id="dowarm">Warm cache</button></div></div>
+<div class="card"><h2>Evaluation: threshold vs accuracy</h2><button class="btn" id="doeval">Run evaluation</button><div id="evalout"></div></div>
+<div class="card"><h2>Cost and latency simulator</h2><div class="row">
+<label>Queries <input type="number" id="sq" value="10000" style="width:100px"></label><label>Hit rate <input type="number" id="sh" value="0.6" step="0.05" style="width:80px"></label>
+<label>LLM ms <input type="number" id="sl" value="1500" style="width:90px"></label><button class="btn" id="dosim">Simulate</button></div><div id="simout" class="kpis" style="margin-top:12px"></div></div></section>
+</main><div id="toast" role="status"></div><script src="/static/app.js"></script></body></html>
