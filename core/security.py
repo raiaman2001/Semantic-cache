@@ -1,8 +1,10 @@
 import hashlib
 import time
 from collections import defaultdict, deque
-from typing import Any, Optional
+from typing import Any
+
 from fastapi import Header, HTTPException, Request
+
 from config import Settings
 from core.logging_config import setup_logger
 
@@ -12,7 +14,7 @@ logger = setup_logger("semantic_cache.security")
 class SecurityGuard:
     """Handles API key validation (SHA-256 hashed comparison) and sliding-window rate limiting."""
 
-    def __init__(self, settings: Settings, redis_client: Optional[Any] = None) -> None:
+    def __init__(self, settings: Settings, redis_client: Any | None = None) -> None:
         self.settings = settings
         self.redis = redis_client
         self._local_history: dict[str, deque[float]] = defaultdict(deque)
@@ -54,7 +56,7 @@ class SecurityGuard:
         d.append(now)
         return True
 
-    async def __call__(self, request: Request, x_api_key: Optional[str] = Header(None)) -> None:
+    async def __call__(self, request: Request, x_api_key: str | None = Header(None)) -> None:
         # Only protect /api routes
         if not request.url.path.startswith("/api"):
             return

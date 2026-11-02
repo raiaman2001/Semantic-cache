@@ -1,5 +1,6 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
 from api.routes import set_cache_service
 from app import create_app
 from config import Settings
@@ -55,7 +56,7 @@ async def test_api_auth_and_rate_limiting(tmp_path):
     )
     guard = SecurityGuard(settings=secure_settings)
 
-    from fastapi import FastAPI, Depends
+    from fastapi import Depends, FastAPI
     test_app = FastAPI(dependencies=[Depends(guard)])
 
     @test_app.get("/api/test")

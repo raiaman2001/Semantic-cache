@@ -1,9 +1,11 @@
+import logging
+
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
 from api.routes import set_cache_service
 from app import create_app
-from core.logging_config import setup_logger, JSONFormatter
-import logging
+from core.logging_config import JSONFormatter, setup_logger
 
 
 @pytest.mark.asyncio
@@ -54,7 +56,7 @@ async def test_api_routes_extended(cache_service):
 
 
 def test_logging_formatter():
-    logger = setup_logger("test_json_logger")
+    setup_logger("test_json_logger")
     formatter = JSONFormatter()
     record = logging.LogRecord(
         name="test",

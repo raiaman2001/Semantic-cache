@@ -2,8 +2,7 @@ import json
 import sqlite3
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries(
@@ -60,7 +59,7 @@ class Database:
             self._conn.executescript(SCHEMA)
             self._conn.commit()
 
-    def get_thresholds(self, default_thresholds: Dict[str, float]) -> Dict[str, float]:
+    def get_thresholds(self, default_thresholds: dict[str, float]) -> dict[str, float]:
         with self._lock:
             row = self._conn.execute("SELECT v FROM settings WHERE k='thr'").fetchone()
             if row:
@@ -70,17 +69,17 @@ class Database:
                     pass
             return dict(default_thresholds)
 
-    def save_thresholds(self, thresholds: Dict[str, float]) -> None:
+    def save_thresholds(self, thresholds: dict[str, float]) -> None:
         with self._lock:
             self._conn.execute("REPLACE INTO settings VALUES('thr', ?)", (json.dumps(thresholds),))
             self._conn.commit()
 
-    def get_entry_by_key(self, key: str) -> Optional[Tuple[int, str, float, float]]:
+    def get_entry_by_key(self, key: str) -> tuple[int, str, float, float] | None:
         with self._lock:
             row = self._conn.execute("SELECT id, answer, ts, ttl FROM entries WHERE key=?", (key,)).fetchone()
             return row
 
-    def get_entry_by_id(self, entry_id: int) -> Optional[Tuple[int, str, str, float, float]]:
+    def get_entry_by_id(self, entry_id: int) -> tuple[int, str, str, float, float] | None:
         with self._lock:
             row = self._conn.execute("SELECT id, query, answer, ts, ttl FROM entries WHERE id=?", (entry_id,)).fetchone()
             return row
@@ -101,7 +100,7 @@ class Database:
         query: str,
         answer: str,
         ttl: float,
-    ) -> Tuple[int, List[int]]:
+    ) -> tuple[int, list[int]]:
         """Inserts a new entry, replacing any prior entry with the same key. Returns (new_id, old_ids)."""
         now = time.time()
         with self._lock:
@@ -125,7 +124,7 @@ class Database:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0])
 
-    def get_lru_excess_ids(self, max_entries: int) -> List[int]:
+    def get_lru_excess_ids(self, max_entries: int) -> list[int]:
         with self._lock:
             total = self.count_entries()
             if total <= max_entries:
@@ -133,7 +132,7 @@ class Database:
             excess = total - max_entries
             return [r[0] for r in self._conn.execute("SELECT id FROM entries ORDER BY last ASC LIMIT ?", (excess,)).fetchall()]
 
-    def delete_by_ids(self, ids: List[int]) -> List[str]:
+    def delete_by_ids(self, ids: list[int]) -> list[str]:
         """Deletes entries by id and returns associated cache keys."""
         if not ids:
             return []
@@ -144,7 +143,7 @@ class Database:
             self._conn.commit()
             return keys
 
-    def delete_by_tag_and_ns(self, tag: str, ns: str) -> List[int]:
+    def delete_by_tag_and_ns(self, tag: str, ns: str) -> list[int]:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id FROM entries WHERE (?='' OR tag=?) AND (?='' OR ns=?)",
@@ -165,7 +164,7 @@ class Database:
         score: float,
         ms: float,
         tokens: int,
-        entry_id: Optional[int],
+        entry_id: int | None,
         cat: str,
     ) -> int:
         with self._lock:
@@ -180,11 +179,11 @@ class Database:
             assert cur.lastrowid is not None
             return cur.lastrowid
 
-    def get_log_record(self, log_id: int) -> Optional[Tuple[str, str]]:
+    def get_log_record(self, log_id: int) -> tuple[str, str] | None:
         with self._lock:
             return self._conn.execute("SELECT cat, level FROM log WHERE id=?", (log_id,)).fetchone()
 
-    def get_stats(self, ns: str = "") -> Dict[str, Any]:
+    def get_stats(self, ns: str = "") -> dict[str, Any]:
         with self._lock:
             w, p = ("WHERE ns=?", (ns,)) if ns else ("", ())
             cur = self._conn.execute(
@@ -210,7 +209,7 @@ class Database:
             ]
             return {"levels": levels, "recent": recent, "top": top}
 
-    def get_entries_list(self, limit: int = 200) -> List[Dict[str, Any]]:
+    def get_entries_list(self, limit: int = 200) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
                 """

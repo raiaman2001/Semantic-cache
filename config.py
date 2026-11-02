@@ -1,4 +1,4 @@
-from typing import Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     # API Security & Rate Limiting
-    cache_api_key: Optional[str] = Field(default=None, alias="CACHE_API_KEY")
+    cache_api_key: str | None = Field(default=None, alias="CACHE_API_KEY")
     rate_limit: int = Field(default=120, alias="RATE_LIMIT")
     max_entries: int = Field(default=500, alias="MAX_ENTRIES")
     default_ttl: int = Field(default=86400, alias="TTL")
@@ -27,13 +27,13 @@ class Settings(BaseSettings):
     base_threshold_general: float = Field(default=0.88, alias="BASE_THRESHOLD_GENERAL")
 
     # Storage URLs
-    redis_url: Optional[str] = Field(default=None, alias="REDIS_URL")
-    qdrant_url: Optional[str] = Field(default=None, alias="QDRANT_URL")
+    redis_url: str | None = Field(default=None, alias="REDIS_URL")
+    qdrant_url: str | None = Field(default=None, alias="QDRANT_URL")
     qdrant_path: str = Field(default="qdrant_data", alias="QDRANT_PATH")
     sqlite_db_path: str = Field(default="cache.db", alias="SQLITE_DB_PATH")
 
     # LLM Settings & Fallback
-    gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
     gemini_fallback_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_FALLBACK_MODEL")
     llm_timeout_seconds: float = Field(default=30.0, alias="LLM_TIMEOUT_SECONDS")

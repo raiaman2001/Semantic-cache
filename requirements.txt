@@ -1,7 +1,10 @@
-fastapi
-uvicorn
-sentence-transformers
-qdrant-client
-redis
-numpy
-google-generativeai
+fastapi>=0.110.0
+uvicorn>=0.28.0
+sentence-transformers>=2.5.0
+qdrant-client>=1.8.0
+redis>=5.0.0
+numpy>=1.26.0
+google-generativeai>=0.4.0
+pydantic-settings>=2.2.0
+prometheus-client>=0.20.0
+httpx>=0.27.0

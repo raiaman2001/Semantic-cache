@@ -1,29 +1,30 @@
 import asyncio
-from typing import List, Optional, Tuple, Protocol
+from typing import Any, Protocol
+
 import numpy as np
 
 
 class Embedder(Protocol):
-    def encode(self, texts: List[str]) -> np.ndarray:
+    def encode(self, texts: list[str]) -> np.ndarray:
         ...
 
 
 class EmbeddingService:
     """Manages text embedding generation, normalization, and micro-batching."""
 
-    def __init__(self, model_instance: Optional[Embedder] = None, model_name: str = "all-MiniLM-L6-v2") -> None:
-        self._model = model_instance
+    def __init__(self, model_instance: Any = None, model_name: str = "all-MiniLM-L6-v2") -> None:
+        self._model: Any = model_instance
         self._model_name = model_name
-        self._q: Optional[asyncio.Queue[Tuple[str, asyncio.Future[np.ndarray]]]] = None
-        self._batch_task: Optional[asyncio.Task[None]] = None
+        self._q: asyncio.Queue[tuple[str, asyncio.Future[np.ndarray]]] | None = None
+        self._batch_task: asyncio.Task[None] | None = None
 
-    def get_model(self) -> Embedder:
+    def get_model(self) -> Any:
         if self._model is None:
             from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer(self._model_name)
         return self._model
 
-    def encode_sync(self, texts: List[str]) -> np.ndarray:
+    def encode_sync(self, texts: list[str]) -> np.ndarray:
         model = self.get_model()
         vecs = model.encode(texts).astype("float32")
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
@@ -35,7 +36,7 @@ class EmbeddingService:
         if self._q is None:
             self._q = asyncio.Queue()
             self._batch_task = asyncio.create_task(self._run_batcher())
-        
+
         loop = asyncio.get_running_loop()
         future: asyncio.Future[np.ndarray] = loop.create_future()
         await self._q.put((text, future))

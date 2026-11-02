@@ -2,8 +2,8 @@ import asyncio
 import json
 import re
 import time
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Response
+
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -14,13 +14,12 @@ from core.cache import (
     compute_cache_key,
     normalize_text,
 )
-from core.metrics import render_metrics
 from core.rerank import verify_lexical_consistency
 
 router = APIRouter()
 
 # Global reference to be injected or retrieved from app.state
-_cache_service: Optional[SemanticCacheService] = None
+_cache_service: SemanticCacheService | None = None
 
 
 def set_cache_service(service: SemanticCacheService) -> None:
@@ -61,7 +60,7 @@ class ThresholdRequest(BaseModel):
 
 
 class WarmRequest(BaseModel):
-    queries: List[str]
+    queries: list[str]
     ns: str = "default"
 
 
@@ -107,9 +106,13 @@ async def ask(r: AskRequest):
 
     # Miss: coalesce or generate via LLM
     ans, shared = await svc.coalesce_generate(key, r.query, r.model)
-    eid = await svc.store(r.query, ans, r.ns, r.model, r.doc_ver, r.tag, r.ttl, key, vec) if (r.use_cache and not shared) else None
+    new_eid: int | None = (
+        await svc.store(r.query, ans, r.ns, r.model, r.doc_ver, r.tag, r.ttl, key, vec)
+        if (r.use_cache and not shared)
+        else None
+    )
 
-    result = svc.log_and_record_metrics(r.query, r.ns, "L3_llm", cat, ans, 0.0, t0, eid, thr)
+    result = svc.log_and_record_metrics(r.query, r.ns, "L3_llm", cat, ans, 0.0, t0, new_eid, thr)
     result["coalesced"] = shared
     return result
 
@@ -139,7 +142,7 @@ async def ask_stream(r: AskRequest):
                 yield ev({"t": word})
                 await asyncio.sleep(0.012)
         else:
-            parts: List[str] = []
+            parts: list[str] = []
             async for chunk in svc.llm.stream(r.query, r.model):
                 if not parts:
                     yield ev({
@@ -240,7 +243,7 @@ def set_thresholds(b: ThresholdRequest):
 
 @router.post("/warm")
 async def warm_cache(b: WarmRequest):
-    svc = get_cache_service()
+    get_cache_service()
     qs = [q.strip() for q in b.queries if q.strip()]
     if qs:
         await asyncio.gather(*[

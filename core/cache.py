@@ -3,10 +3,11 @@ import hashlib
 import json
 import re
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
-from qdrant_client import QdrantClient, models as qm
+from qdrant_client import QdrantClient
+from qdrant_client import models as qm
 
 from config import Settings
 from core.embedding import EmbeddingService
@@ -50,8 +51,8 @@ class SemanticCacheService:
         embedding_service: EmbeddingService,
         rerank_service: RerankService,
         llm_service: LLMService,
-        qdrant_client: Optional[QdrantClient] = None,
-        redis_client: Optional[Any] = None,
+        qdrant_client: QdrantClient | None = None,
+        redis_client: Any | None = None,
     ) -> None:
         self.settings = settings
         self.db = db
@@ -59,11 +60,11 @@ class SemanticCacheService:
         self.rerank = rerank_service
         self.llm = llm_service
         self.redis = redis_client
-        self._inflight: Dict[str, asyncio.Task[str]] = {}
+        self._inflight: dict[str, asyncio.Task[str]] = {}
 
         # Initialize Qdrant Client if not injected
         if qdrant_client is not None:
-            self.qd: Optional[QdrantClient] = qdrant_client
+            self.qd: QdrantClient | None = qdrant_client
         else:
             try:
                 if self.settings.qdrant_url:
@@ -92,14 +93,14 @@ class SemanticCacheService:
             logger.error(f"Error initializing Qdrant collection: {e}")
             self.qd = None
 
-    def get_thresholds(self) -> Dict[str, float]:
+    def get_thresholds(self) -> dict[str, float]:
         defaults = {
             "code": self.settings.base_threshold_code,
             "general": self.settings.base_threshold_general,
         }
         return self.db.get_thresholds(defaults)
 
-    def save_thresholds(self, thr: Dict[str, float]) -> None:
+    def save_thresholds(self, thr: dict[str, float]) -> None:
         self.db.save_thresholds(thr)
 
     async def lookup(
@@ -109,9 +110,9 @@ class SemanticCacheService:
         model: str,
         doc_ver: str,
         cat: str,
-        thr: Dict[str, float],
+        thr: dict[str, float],
         key: str,
-    ) -> Tuple[Optional[Tuple[str, str, float, int]], Optional[np.ndarray]]:
+    ) -> tuple[tuple[str, str, float, int] | None, np.ndarray | None]:
         """
         Multi-tier lookup.
         Returns: ((level, answer, score, entry_id) or None, embedding_vector or None)
@@ -141,6 +142,7 @@ class SemanticCacheService:
         if not self.qd:
             return None, vec
 
+        qd = self.qd
         try:
             flt = qm.Filter(
                 must=[
@@ -149,7 +151,7 @@ class SemanticCacheService:
                 ]
             )
             pts = await asyncio.to_thread(
-                lambda: self.qd.query_points(
+                lambda: qd.query_points(
                     self.settings.qdrant_collection,
                     query=vec.tolist(),
                     query_filter=flt,
@@ -190,7 +192,7 @@ class SemanticCacheService:
         tag: str,
         ttl: float,
         key: str,
-        vec: Optional[np.ndarray],
+        vec: np.ndarray | None,
     ) -> int:
         """Stores entry across L1 (Redis/SQLite) and L2 (Qdrant) with LRU eviction enforcement."""
         if vec is None:
@@ -212,10 +214,11 @@ class SemanticCacheService:
         # Sync Qdrant deletions for overwritten old IDs
         if self.qd and old_ids:
             try:
+                point_ids: list[Any] = list(old_ids)
                 await asyncio.to_thread(
                     self.qd.delete,
                     self.settings.qdrant_collection,
-                    points_selector=qm.PointIdsList(points=old_ids),
+                    points_selector=qm.PointIdsList(points=point_ids),
                 )
             except Exception as e:
                 logger.error(f"Failed to delete overwritten Qdrant points {old_ids}: {e}")
@@ -223,13 +226,14 @@ class SemanticCacheService:
         # Insert new Qdrant vector point
         if self.qd:
             try:
+                vec_list: list[float] = [float(x) for x in vec.tolist()]
                 await asyncio.to_thread(
                     self.qd.upsert,
                     self.settings.qdrant_collection,
                     points=[
                         qm.PointStruct(
                             id=new_id,
-                            vector=vec.tolist(),
+                            vector=vec_list,
                             payload={"ns": ns, "model": model, "doc_ver": doc_ver},
                         )
                     ],
@@ -256,16 +260,17 @@ class SemanticCacheService:
         CACHE_ENTRIES_GAUGE.set(self.db.count_entries())
         return new_id
 
-    async def delete_entries(self, ids: List[int]) -> None:
+    async def delete_entries(self, ids: list[int]) -> None:
         if not ids:
             return
         keys = self.db.delete_by_ids(ids)
         if self.qd:
             try:
+                point_ids: list[Any] = list(ids)
                 await asyncio.to_thread(
                     self.qd.delete,
                     self.settings.qdrant_collection,
-                    points_selector=qm.PointIdsList(points=ids),
+                    points_selector=qm.PointIdsList(points=point_ids),
                 )
             except Exception as e:
                 logger.error(f"Failed to delete Qdrant points {ids}: {e}")
@@ -302,7 +307,7 @@ class SemanticCacheService:
 
         CACHE_ENTRIES_GAUGE.set(0)
 
-    async def coalesce_generate(self, key: str, query: str, model: str) -> Tuple[str, bool]:
+    async def coalesce_generate(self, key: str, query: str, model: str) -> tuple[str, bool]:
         """Request coalescing: identical in-flight cache misses share a single LLM execution."""
         shared = key in self._inflight
         if not shared:
@@ -327,9 +332,9 @@ class SemanticCacheService:
         ans: str,
         score: float,
         start_time: float,
-        entry_id: Optional[int],
-        thr: Dict[str, float],
-    ) -> Dict[str, Any]:
+        entry_id: int | None,
+        thr: dict[str, float],
+    ) -> dict[str, Any]:
         ms = (time.time() - start_time) * 1000
         sec = ms / 1000.0
         toks = estimate_tokens(ans)

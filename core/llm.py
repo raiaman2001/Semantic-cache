@@ -1,6 +1,7 @@
 import asyncio
 import time
-from typing import AsyncGenerator, Iterator, Optional
+from collections.abc import AsyncGenerator, Iterator
+
 from core.logging_config import setup_logger
 
 logger = setup_logger("semantic_cache.llm")
@@ -11,7 +12,7 @@ class LLMService:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         default_model: str = "gemini-2.0-flash",
         fallback_model: str = "gemini-1.5-flash",
         timeout: float = 30.0,
@@ -38,13 +39,13 @@ class LLMService:
             if chunk.text:
                 yield chunk.text
 
-    async def stream(self, query: str, model_name: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def stream(self, query: str, model_name: str | None = None) -> AsyncGenerator[str, None]:
         chosen_model = model_name or self.default_model
         models_to_try = [chosen_model]
         if self.fallback_model and self.fallback_model != chosen_model:
             models_to_try.append(self.fallback_model)
 
-        last_err: Optional[Exception] = None
+        last_err: Exception | None = None
         for current_model in models_to_try:
             for attempt in range(self.max_retries + 1):
                 try:
@@ -74,7 +75,7 @@ class LLMService:
         if last_err:
             raise last_err
 
-    async def complete(self, query: str, model_name: Optional[str] = None) -> str:
+    async def complete(self, query: str, model_name: str | None = None) -> str:
         parts: list[str] = []
         async for chunk in self.stream(query, model_name):
             parts.append(chunk)

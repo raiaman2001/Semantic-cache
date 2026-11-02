@@ -1,11 +1,12 @@
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
-from fastapi import FastAPI, Depends, Response
+
+from fastapi import Depends, FastAPI, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import router as api_router, set_cache_service
+from api.routes import router as api_router
+from api.routes import set_cache_service
 from config import settings
 from core.cache import SemanticCacheService
 from core.embedding import EmbeddingService
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
 
 if __name__ == "__main__":
     import uvicorn

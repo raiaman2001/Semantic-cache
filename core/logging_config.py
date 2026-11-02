@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 import time
-from typing import Any, Dict
+from typing import Any
 
 
 class JSONFormatter(logging.Formatter):
@@ -11,7 +11,7 @@ class JSONFormatter(logging.Formatter):
     SENSITIVE_KEYS = {"api_key", "x-api-key", "gemini_api_key", "password", "token", "secret"}
 
     def format(self, record: logging.LogRecord) -> str:
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "timestamp": self.formatTime(record, self.datefmt) if self.datefmt else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
             "level": record.levelname,
             "logger": record.name,
@@ -27,8 +27,8 @@ class JSONFormatter(logging.Formatter):
 
         return json.dumps(payload, ensure_ascii=False)
 
-    def _sanitize(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        clean: Dict[str, Any] = {}
+    def _sanitize(self, data: dict[str, Any]) -> dict[str, Any]:
+        clean: dict[str, Any] = {}
         for k, v in data.items():
             if any(s in k.lower() for s in self.SENSITIVE_KEYS):
                 clean[k] = "[REDACTED]"

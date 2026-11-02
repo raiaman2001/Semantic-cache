@@ -8,8 +8,9 @@ Evaluation script for Semantic Cache:
 
 import os
 import sys
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Ensure root directory is on pythonpath
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -158,7 +159,6 @@ def run_evaluation():
     total_neg = len(PAIRS) - total_pos
 
     thresholds = np.arange(0.50, 0.99, 0.04)
-    rows = []
 
     print("\n| Threshold | Precision (raw) | Recall (raw) | FPR (raw) | Precision (+RR) | Recall (+RR) | FPR (+RR) |")
     print("|---|---|---|---|---|---|---|")

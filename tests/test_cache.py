@@ -1,7 +1,9 @@
 import asyncio
 import time
+
 import pytest
-from core.cache import compute_cache_key, classify_category
+
+from core.cache import compute_cache_key
 from core.rerank import verify_lexical_consistency
 
 

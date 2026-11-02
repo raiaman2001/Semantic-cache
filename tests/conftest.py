@@ -1,7 +1,7 @@
-import asyncio
+
 import numpy as np
 import pytest
-from typing import List, Tuple
+
 from config import Settings
 from core.cache import SemanticCacheService
 from core.embedding import EmbeddingService
@@ -12,7 +12,7 @@ from db.database import Database
 
 class StubEmbeddingModel:
     """Deterministic embedding stub based on character frequency / keyword hashing."""
-    def encode(self, texts: List[str]) -> np.ndarray:
+    def encode(self, texts: list[str]) -> np.ndarray:
         vecs = []
         for t in texts:
             np.random.seed(abs(hash(t.lower())) % (2**31))
@@ -27,7 +27,7 @@ class StubRerankerModel:
     def __init__(self, score_mapping: dict = None):
         self.score_mapping = score_mapping or {}
 
-    def predict(self, pairs: List[Tuple[str, str]]) -> List[float]:
+    def predict(self, pairs: list[tuple[str, str]]) -> list[float]:
         results = []
         for a, b in pairs:
             if (a, b) in self.score_mapping:

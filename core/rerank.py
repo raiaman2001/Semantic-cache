@@ -1,9 +1,8 @@
 import asyncio
 import re
-from typing import List, Optional, Tuple, Protocol
+from typing import Protocol
 
-
-OPPOSITES: List[Tuple[str, str]] = [
+OPPOSITES: list[tuple[str, str]] = [
     ("enable", "disable"),
     ("add", "remove"),
     ("open", "close"),
@@ -41,7 +40,7 @@ def verify_lexical_consistency(a: str, b: str) -> bool:
 
 
 class CrossEncoderProtocol(Protocol):
-    def predict(self, sentences: List[Tuple[str, str]]) -> List[float]:
+    def predict(self, sentences: list[tuple[str, str]]) -> list[float]:
         ...
 
 
@@ -50,7 +49,7 @@ class RerankService:
 
     def __init__(
         self,
-        model_instance: Optional[CrossEncoderProtocol] = None,
+        model_instance: CrossEncoderProtocol | None = None,
         model_name: str = "cross-encoder/stsb-TinyBERT-L-4",
         min_score: float = 0.6,
         enabled: bool = True,
@@ -61,7 +60,7 @@ class RerankService:
         self.enabled = enabled
         self._load_failed = False
 
-    def get_model(self) -> Optional[CrossEncoderProtocol]:
+    def get_model(self) -> CrossEncoderProtocol | None:
         if not self.enabled or self._load_failed:
             return None
         if self._model is None:
