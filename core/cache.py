@@ -359,3 +359,4 @@ class SemanticCacheService:
             "threshold": thr[cat],
             "category": cat,
         }
+

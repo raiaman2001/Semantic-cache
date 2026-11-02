@@ -60,3 +60,4 @@ class EmbeddingService:
                 for _, fut in items:
                     if not fut.done():
                         fut.set_exception(e)
+

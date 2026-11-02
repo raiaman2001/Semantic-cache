@@ -84,3 +84,4 @@ class RerankService:
 
         score = await asyncio.to_thread(lambda: float(model.predict([(query, candidate)])[0]))
         return score >= self.min_score
+

@@ -237,3 +237,4 @@ class Database:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+

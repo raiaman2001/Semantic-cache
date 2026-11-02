@@ -79,3 +79,4 @@ class LLMService:
         async for chunk in self.stream(query, model_name):
             parts.append(chunk)
         return "".join(parts)
+

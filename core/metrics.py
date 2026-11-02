@@ -32,3 +32,4 @@ CACHE_COALESCED_TOTAL = Counter(
 
 def render_metrics() -> tuple[bytes, str]:
     return generate_latest(), CONTENT_TYPE_LATEST
+

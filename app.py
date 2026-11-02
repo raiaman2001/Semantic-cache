@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
         dependencies=[Depends(guard)],
     )
 
-    application.include_router(api_router, credentials=True if False else None, prefix="/api")
+    application.include_router(api_router, prefix="/api")
 
     @application.get("/metrics", include_in_schema=False)
     def metrics():

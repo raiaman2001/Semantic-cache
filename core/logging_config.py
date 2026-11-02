@@ -48,3 +48,4 @@ def setup_logger(name: str = "semantic_cache", level: str = "INFO") -> logging.L
         logger.addHandler(handler)
     logger.propagate = False
     return logger
+
