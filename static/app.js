@@ -65,23 +65,42 @@ function renderMarkdown(rawText) {
     `;
   });
 
-  // 3. Inline code `...`
+  // 3. Headings: ###, ##, #
+  text = text.replace(/^### (.*$)/gim, '<h4 class="md-heading">$1</h4>');
+  text = text.replace(/^## (.*$)/gim, '<h3 class="md-heading">$1</h3>');
+  text = text.replace(/^# (.*$)/gim, '<h2 class="md-heading">$1</h2>');
+
+  // 4. Inline code `...`
   text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
-  // 4. Bold text **...**
+  // 5. Bold text **...**
   text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 
-  // 5. Unordered lists: lines starting with "- " or "* "
-  text = text.replace(/(?:^|\n)([-*]\s+.+(?:\n[-*]\s+.+)*)/g, match => {
-    const items = match.trim().split("\n").map(li => `<li>${li.replace(/^[-*]\s+/, "")}</li>`).join("");
-    return `\n<ul>${items}</ul>\n`;
+  // 6. Italic text *...*
+  text = text.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>");
+
+  // 7. Ordered lists: 1. 2. 3.
+  text = text.replace(/(?:^|\n)(\d+\.\s+.+(?:\n\d+\.\s+.+)*)/g, match => {
+    const items = match.trim().split("\n").map(li => `<li>${li.replace(/^\d+\.\s+/, "")}</li>`).join("");
+    return `\n<ol class="md-list">${items}</ol>\n`;
   });
 
-  // 6. Paragraphs (split by double newlines, except around code blocks)
+  // 8. Unordered lists: lines starting with "- " or "* "
+  text = text.replace(/(?:^|\n)([-*]\s+.+(?:\n[-*]\s+.+)*)/g, match => {
+    const items = match.trim().split("\n").map(li => `<li>${li.replace(/^[-*]\s+/, "")}</li>`).join("");
+    return `\n<ul class="md-list">${items}</ul>\n`;
+  });
+
+  // 9. Paragraphs (split by double newlines)
   const paragraphs = text.split(/\n{2,}/).map(chunk => {
     chunk = chunk.trim();
     if (!chunk) return "";
-    if (chunk.startsWith("<div class=\"code-block-wrapper\"") || chunk.startsWith("<ul>")) {
+    if (
+      chunk.startsWith("<div class=\"code-block-wrapper\"") ||
+      chunk.startsWith("<ul") ||
+      chunk.startsWith("<ol") ||
+      chunk.startsWith("<h")
+    ) {
       return chunk;
     }
     return `<p>${chunk.replace(/\n/g, "<br>")}</p>`;
@@ -120,7 +139,8 @@ function copyText(text) {
 // ============================================================================
 async function api(path, method = "GET", body, signal) {
   const headers = { "Content-Type": "application/json" };
-  const key = $("#apikey").value.trim();
+  const keyInput = $("#apikey");
+  const key = keyInput ? keyInput.value.trim() : "";
   if (key) headers["x-api-key"] = key;
 
   const res = await fetch("/api" + path, {
@@ -480,7 +500,8 @@ async function handleSend() {
   try {
     if (useStream) {
       const headers = { "Content-Type": "application/json" };
-      const key = $("#apikey").value.trim();
+      const keyInput = $("#apikey");
+      const key = keyInput ? keyInput.value.trim() : "";
       if (key) headers["x-api-key"] = key;
 
       const response = await fetch("/api/ask/stream", {
@@ -499,6 +520,7 @@ async function handleSend() {
       const decoder = new TextDecoder();
       let buffer = "";
 
+      let lastRenderTime = 0;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -517,11 +539,19 @@ async function handleSend() {
           }
           if (payload.t) {
             accumulatedText += payload.t;
-            markdownDiv.innerHTML = renderMarkdown(accumulatedText) + '<span class="streaming-cursor"></span>';
-            scrollToBottom();
+            // Throttle innerHTML re-parsing to animation frames for butter-smooth 60fps rendering
+            const now = performance.now();
+            if (now - lastRenderTime > 20) {
+              markdownDiv.innerHTML = renderMarkdown(accumulatedText) + '<span class="streaming-cursor"></span>';
+              lastRenderTime = now;
+              scrollToBottom();
+            }
           }
         }
       }
+      // Ensure final frame is rendered
+      markdownDiv.innerHTML = renderMarkdown(accumulatedText) + '<span class="streaming-cursor"></span>';
+      scrollToBottom();
     } else {
       // Non-streaming fallback
       const result = await api("/ask", "POST", body, STATE.abortController.signal);
@@ -930,23 +960,52 @@ function setupEntriesAndLab() {
     try {
       const d = await api("/evaluate");
       const c = d.curve;
-      const W = 620, H = 220;
-      const x = t => 45 + ((t - 0.5) / 0.48) * (W - 70);
-      const y = v => H - 25 - v * (H - 50);
+      const W = 700, H = 260;
+      const padLeft = 45, padRight = 30, padTop = 45, padBottom = 35;
+      const plotW = W - padLeft - padRight;
+      const plotH = H - padTop - padBottom;
+      const x = t => padLeft + ((t - 0.5) / 0.48) * plotW;
+      const y = v => padTop + plotH - v * plotH;
 
-      const line = (k, col) => `<polyline fill="none" stroke="${col}" stroke-width="2.5" points="${c.map(p => x(p.t) + "," + y(p[k])).join(" ")}"/>`;
+      const line = (k, col) => `<polyline fill="none" stroke="${col}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${c.map(p => `${x(p.t).toFixed(1)},${y(p[k]).toFixed(1)}`).join(" ")}"/>`;
 
       $("#evalout").innerHTML = `
-        <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Precision & Recall by Threshold">
-          ${[0, 0.5, 1].map(v => `<line x1="45" x2="${W - 20}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border-subtle)"/><text x="8" y="${y(v) + 4}" fill="var(--text-muted)" font-size="11">${v}</text>`).join("")}
-          ${c.filter((_, i) => i % 3 === 0).map(p => `<text x="${x(p.t)}" y="${H - 6}" fill="var(--text-muted)" font-size="11" text-anchor="middle">${p.t}</text>`).join("")}
-          ${line("precision", "var(--accent)")}
-          ${line("recall", "var(--hit-l2)")}
-          ${line("precision_rr", "var(--hit-l3)")}
-          <text x="${W - 130}" y="16" fill="var(--accent)" font-size="11" font-weight="600">■ Raw Precision</text>
-          <text x="${W - 260}" y="16" fill="var(--hit-l3)" font-size="11" font-weight="600">■ Precision + Reranker</text>
-          <text x="${W - 65}" y="16" fill="var(--hit-l2)" font-size="11" font-weight="600">■ Recall</text>
-        </svg>
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:16px;">
+          <!-- Clean HTML Legend with spacing -->
+          <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-bottom:12px;font-size:12px;font-weight:600;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="width:14px;height:3px;background:var(--accent);display:inline-block;border-radius:2px;"></span>
+              <span style="color:var(--text-primary);">Raw Precision</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="width:14px;height:3px;background:var(--hit-l3);display:inline-block;border-radius:2px;"></span>
+              <span style="color:var(--text-primary);">Precision + Reranker</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="width:14px;height:3px;background:var(--hit-l2);display:inline-block;border-radius:2px;"></span>
+              <span style="color:var(--text-primary);">Recall</span>
+            </div>
+          </div>
+
+          <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible;" role="img" aria-label="Precision & Recall by Threshold">
+            <!-- Grid lines & Y-Axis labels -->
+            ${[0, 0.25, 0.5, 0.75, 1].map(v => `
+              <line x1="${padLeft}" x2="${W - padRight}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border-subtle)" stroke-width="1" stroke-dasharray="${v === 0 ? 'none' : '3,3'}"/>
+              <text x="${padLeft - 8}" y="${y(v) + 4}" fill="var(--text-muted)" font-size="11" text-anchor="end">${v}</text>
+            `).join("")}
+
+            <!-- X-Axis Labels -->
+            ${c.filter((_, i) => i % 3 === 0).map(p => `
+              <line x1="${x(p.t)}" x2="${x(p.t)}" y1="${y(0)}" y2="${y(0) + 5}" stroke="var(--border-subtle)" stroke-width="1"/>
+              <text x="${x(p.t)}" y="${H - 12}" fill="var(--text-muted)" font-size="11" text-anchor="middle">${p.t.toFixed(2)}</text>
+            `).join("")}
+
+            <!-- Data series lines -->
+            ${line("precision", "var(--accent)")}
+            ${line("precision_rr", "var(--hit-l3)")}
+            ${line("recall", "var(--hit-l2)")}
+          </svg>
+        </div>
         <div class="scroll" style="margin-top:14px;">
           <table>
             <thead><tr><th>Test Pair</th><th>Paraphrase</th><th>Cosine Sim</th><th>Reranker</th><th>Status</th></tr></thead>
@@ -990,12 +1049,15 @@ function setupEntriesAndLab() {
 
 // Fetch live backend configuration
 async function checkBackendConfig() {
+  const cfgText = $("#cfg-text");
+  const cfg = $("#cfg");
+  if (!cfgText && !cfg) return;
   try {
     const c = await api("/config");
-    $("#cfg-text").textContent = `L1: ${c.l1} · Qdrant: ${c.vectors} · Reranker: ${c.reranker ? 'ON' : 'OFF'}`;
+    if (cfgText) cfgText.textContent = `L1: ${c.l1} · Qdrant: ${c.vectors} · Reranker: ${c.reranker ? 'ON' : 'OFF'}`;
   } catch (err) {
-    $("#cfg").classList.add("offline");
-    $("#cfg-text").textContent = "Backend Offline";
+    if (cfg) cfg.classList.add("offline");
+    if (cfgText) cfgText.textContent = "Backend Offline";
   }
 }
 

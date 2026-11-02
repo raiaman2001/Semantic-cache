@@ -630,6 +630,17 @@ body {
 .assistant-markdown ul, .assistant-markdown ol { margin: 8px 0 12px 20px; }
 .assistant-markdown li { margin-bottom: 4px; }
 .assistant-markdown strong { font-weight: 600; }
+.assistant-markdown .md-heading {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--text-primary);
+}
+.assistant-markdown h2.md-heading { font-size: 18px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; }
+.assistant-markdown h3.md-heading { font-size: 16px; }
+.assistant-markdown h4.md-heading { font-size: 14.5px; }
+.assistant-markdown ol.md-list { list-style-type: decimal; padding-left: 20px; margin: 8px 0 12px; }
+.assistant-markdown ul.md-list { list-style-type: disc; padding-left: 20px; margin: 8px 0 12px; }
 
 .assistant-markdown code.inline-code {
   font-family: var(--font-mono);
