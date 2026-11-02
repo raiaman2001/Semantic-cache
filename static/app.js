@@ -1,5 +1,13 @@
-const $ = s => document.querySelector(s);
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+/**
+ * Semantic Cache Studio - Modern LLM Chat Frontend
+ * Clean architectural separation: State, API, Markdown Parser, Chat Engine, Panels, UI Helpers.
+ */
+
+// ============================================================================
+// 1. STATE & CONSTANTS
+// ============================================================================
+const $ = selector => document.querySelector(selector);
+const $$ = selector => document.querySelectorAll(selector);
 
 const LBL = {
   L1_exact: "L1 Exact Hit",
@@ -7,215 +15,797 @@ const LBL = {
   L3_llm: "L3 LLM Call"
 };
 
-let lastInspection = null;
+const STATE = {
+  currentChatId: null,
+  chats: [], // [{ id, title, messages: [{ role: 'user'|'assistant', text, meta, error }] }]
+  activePanel: "chat-panel",
+  isStreaming: false,
+  abortController: null,
+  latestInspection: null,
+  userScrolledUp: false
+};
 
-async function api(path, method = "GET", body) {
-  const h = { "Content-Type": "application/json" };
-  const key = $("#apikey").value.trim();
-  if (key) h["x-api-key"] = key;
-
-  const r = await fetch("/api" + path, {
-    method,
-    headers: h,
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  if (!r.ok) {
-    const e = await r.json().catch(() => ({}));
-    const msg = e.detail || `Request failed (${r.status})`;
-    toast(msg, true);
-    throw new Error(msg);
-  }
-  return r.json();
+// ============================================================================
+// 2. UTILS & MARKDOWN PARSER (Safe from XSS)
+// ============================================================================
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[c]));
 }
 
-function toast(m, isError = false) {
+/**
+ * Basic safe markdown rendering:
+ * Escapes HTML first, then transforms code blocks, inline code, bold, lists, paragraphs.
+ */
+function renderMarkdown(rawText) {
+  if (!rawText) return "";
+
+  // 1. Escape HTML for strict XSS prevention
+  let text = escapeHtml(rawText);
+
+  // 2. Fenced code blocks ```lang ... ```
+  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const language = lang.trim() || "code";
+    return `
+      <div class="code-block-wrapper">
+        <div class="code-block-header">
+          <span>${language}</span>
+          <button class="code-copy-btn" onclick="copySnippet(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span>Copy</span>
+          </button>
+        </div>
+        <pre><code>${code.trim()}</code></pre>
+      </div>
+    `;
+  });
+
+  // 3. Inline code `...`
+  text = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+  // 4. Bold text **...**
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+  // 5. Unordered lists: lines starting with "- " or "* "
+  text = text.replace(/(?:^|\n)([-*]\s+.+(?:\n[-*]\s+.+)*)/g, match => {
+    const items = match.trim().split("\n").map(li => `<li>${li.replace(/^[-*]\s+/, "")}</li>`).join("");
+    return `\n<ul>${items}</ul>\n`;
+  });
+
+  // 6. Paragraphs (split by double newlines, except around code blocks)
+  const paragraphs = text.split(/\n{2,}/).map(chunk => {
+    chunk = chunk.trim();
+    if (!chunk) return "";
+    if (chunk.startsWith("<div class=\"code-block-wrapper\"") || chunk.startsWith("<ul>")) {
+      return chunk;
+    }
+    return `<p>${chunk.replace(/\n/g, "<br>")}</p>`;
+  });
+
+  return paragraphs.join("");
+}
+
+function toast(message, isError = false) {
   const t = $("#toast");
-  t.textContent = m;
-  t.style.background = isError ? "var(--bad)" : "var(--ink)";
-  t.style.color = isError ? "#fff" : "var(--bg)";
+  t.textContent = message;
+  t.style.background = isError ? "var(--danger)" : "var(--text-primary)";
+  t.style.color = isError ? "#fff" : "var(--bg-primary)";
   t.classList.add("on");
   setTimeout(() => t.classList.remove("on"), 3000);
 }
 
-// Accessible tab navigation
-document.querySelectorAll("#tabs button").forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll("#tabs button").forEach(e => {
-      e.classList.remove("on");
-      e.setAttribute("aria-selected", "false");
-    });
-    document.querySelectorAll("main .tab-pane").forEach(e => e.classList.remove("on"));
+function copySnippet(btn) {
+  const code = btn.closest(".code-block-wrapper").querySelector("code").innerText;
+  navigator.clipboard.writeText(code).then(() => {
+    const span = btn.querySelector("span");
+    const original = span.textContent;
+    span.textContent = "Copied!";
+    setTimeout(() => { span.textContent = original; }, 2000);
+  });
+}
 
-    b.classList.add("on");
-    b.setAttribute("aria-selected", "true");
-    const target = $("#" + b.dataset.t);
-    if (target) target.classList.add("on");
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    toast("Answer copied to clipboard");
+  });
+}
 
-    ({ stats: loadStats, entries: loadEntries })[b.dataset.t]?.();
+// ============================================================================
+// 3. API CLIENT
+// ============================================================================
+async function api(path, method = "GET", body, signal) {
+  const headers = { "Content-Type": "application/json" };
+  const key = $("#apikey").value.trim();
+  if (key) headers["x-api-key"] = key;
+
+  const res = await fetch("/api" + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err.detail || `Request failed with status ${res.status}`;
+    toast(msg, true);
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+// ============================================================================
+// 4. STORAGE & CHAT CONVERSATION MANAGEMENT
+// ============================================================================
+const STORAGE_KEY = "semantic_cache_chats_v2";
+
+function loadChatsFromStorage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    STATE.chats = saved ? JSON.parse(saved) : [];
+  } catch (e) {
+    console.error("Failed to load chats from localStorage:", e);
+    STATE.chats = [];
+  }
+}
+
+function saveChatsToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE.chats));
+  } catch (e) {
+    console.error("Failed to save chats to localStorage:", e);
+  }
+}
+
+function createNewChat() {
+  // If streaming, abort
+  if (STATE.isStreaming && STATE.abortController) {
+    STATE.abortController.abort();
+  }
+
+  const newChat = {
+    id: "chat_" + Date.now(),
+    title: "New conversation",
+    messages: []
   };
-});
+  STATE.chats.unshift(newChat);
+  STATE.currentChatId = newChat.id;
+  saveChatsToStorage();
+  renderRecentChatsList();
+  renderActiveChatMessages();
 
-function updateInspector(r, query) {
-  lastInspection = { r, query };
-  const badge = $("#inspect-badge");
-  badge.className = `badge ${r.level}`;
-  badge.textContent = LBL[r.level] || r.level;
+  // Focus textarea
+  $("#q").focus();
+}
 
-  let reason = "";
-  if (r.level === "L1_exact") {
-    reason = "Exact normalized hash match found in Tier 1 cache (Redis / SQLite). Instant sub-millisecond retrieval with 0 LLM tokens spent.";
-  } else if (r.level === "L2_semantic") {
-    reason = `Vector cosine similarity (${r.score}) exceeded category threshold (${r.threshold}). Lexical antonym guard and Cross-Encoder reranker approved the match.`;
-  } else {
-    reason = "No exact match or semantic match above threshold. LLM generated response and populated L1/L2 caches for future queries.";
-    if (r.coalesced) {
-      reason += " [Coalesced: Shared execution with an identical in-flight request].";
+function deleteChat(chatId, event) {
+  if (event) event.stopPropagation();
+  STATE.chats = STATE.chats.filter(c => c.id !== chatId);
+  saveChatsToStorage();
+
+  if (STATE.currentChatId === chatId) {
+    if (STATE.chats.length > 0) {
+      STATE.currentChatId = STATE.chats[0].id;
+    } else {
+      createNewChat();
+      return;
+    }
+  }
+  renderRecentChatsList();
+  renderActiveChatMessages();
+}
+
+function clearAllChats() {
+  if (confirm("Delete all conversation history?")) {
+    STATE.chats = [];
+    saveChatsToStorage();
+    createNewChat();
+  }
+}
+
+function selectChat(chatId) {
+  if (STATE.isStreaming && STATE.abortController) {
+    STATE.abortController.abort();
+  }
+  STATE.currentChatId = chatId;
+  renderRecentChatsList();
+  renderActiveChatMessages();
+
+  // If on mobile, close sidebar drawer
+  closeSidebar();
+}
+
+function renderRecentChatsList() {
+  const container = $("#recent-chats-list");
+  if (!STATE.chats.length) {
+    container.innerHTML = '<div style="padding:10px 8px;font-size:12px;color:var(--text-muted);">No saved chats yet.</div>';
+    return;
+  }
+
+  container.innerHTML = STATE.chats.map(c => `
+    <button class="chat-item ${c.id === STATE.currentChatId ? 'active' : ''}" onclick="selectChat('${c.id}')" aria-label="${escapeHtml(c.title)}">
+      <span class="chat-item-title">${escapeHtml(c.title)}</span>
+      <span class="chat-del-btn" onclick="deleteChat('${c.id}', event)" title="Delete conversation" aria-label="Delete conversation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </span>
+    </button>
+  `).join("");
+}
+
+// ============================================================================
+// 5. CHAT RENDERING & STREAMING ENGINE
+// ============================================================================
+function getCurrentChat() {
+  return STATE.chats.find(c => c.id === STATE.currentChatId);
+}
+
+function renderActiveChatMessages() {
+  const chat = getCurrentChat();
+  const streamContainer = $("#chat-stream");
+
+  if (!chat || !chat.messages.length) {
+    streamContainer.innerHTML = `
+      <div id="empty-state" class="chat-empty-state">
+        <div class="greeting-badge">⚡ Instant Semantic Acceleration</div>
+        <h2 class="greeting-heading">Where should we start?</h2>
+        <p class="greeting-desc">Ask a question to see multi-tier caching in action. Repeated questions hit L1 in &lt;15ms; semantic rephrasings hit L2 with Qdrant and Cross-Encoder verification.</p>
+
+        <div class="prompt-chips-grid">
+          <button class="prompt-chip" data-query="How do I reset my password?">
+            <span class="chip-title">How do I reset my password?</span>
+            <span class="chip-sub">Tests authentication FAQ caching</span>
+          </button>
+          <button class="prompt-chip" data-query="What is retrieval augmented generation (RAG)?">
+            <span class="chip-title">What is RAG?</span>
+            <span class="chip-sub">Architecture and vector databases</span>
+          </button>
+          <button class="prompt-chip" data-query="How to install Python on Windows 11?">
+            <span class="chip-title">Install Python on Windows</span>
+            <span class="chip-sub">Step-by-step setup procedure</span>
+          </button>
+          <button class="prompt-chip" data-query="Explain the difference between SQL and NoSQL">
+            <span class="chip-title">SQL vs NoSQL comparison</span>
+            <span class="chip-sub">Technical differences & tradeoffs</span>
+          </button>
+        </div>
+      </div>
+    `;
+    attachChipEvents();
+    return;
+  }
+
+  streamContainer.innerHTML = chat.messages.map((m, idx) => {
+    if (m.role === "user") {
+      return `
+        <div class="msg-row user-row">
+          <div class="user-bubble">${escapeHtml(m.text)}</div>
+        </div>
+      `;
+    } else {
+      return buildAssistantHtml(m.text, m.meta, m.error, idx);
+    }
+  }).join("");
+
+  scrollToBottom();
+}
+
+function buildAssistantHtml(rawText, meta, isError = false, msgIndex = null) {
+  if (isError) {
+    return `
+      <div class="msg-row assistant-row error-row">
+        <div class="assistant-container">
+          <div class="assistant-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          </div>
+          <div class="assistant-content">
+            <div class="assistant-markdown">${escapeHtml(rawText)}</div>
+            <button class="retry-btn" onclick="retryLastQuery()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"></path></svg>
+              <span>Retry request</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let badgeHtml = "";
+  let feedbackHtml = "";
+
+  if (meta && meta.level) {
+    badgeHtml = `
+      <button class="cache-badge ${meta.level}" onclick="openInspectorWithData(${JSON.stringify(meta).replace(/"/g, '&quot;')})" title="Click to inspect tier decision">
+        <span>${LBL[meta.level] || meta.level}</span>
+        ${meta.ms ? `· ${Math.round(meta.ms)}ms` : ""}
+      </button>
+      ${meta.level === "L2_semantic" && meta.score ? `<span class="mute text-xs">Sim: <strong>${meta.score}</strong></span>` : ""}
+      ${meta.coalesced ? `<span class="mute text-xs">· (shared with in-flight request)</span>` : ""}
+    `;
+
+    // L2 Feedback Buttons
+    if (meta.level === "L2_semantic" && meta.log_id) {
+      feedbackHtml = `
+        <div class="feedback-actions">
+          <button class="action-icon-btn" onclick="sendFeedback(${meta.log_id}, true, this)" title="Accurate semantic match">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+          </button>
+          <button class="action-icon-btn" onclick="sendFeedback(${meta.log_id}, false, this)" title="False semantic match">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"></path></svg>
+          </button>
+        </div>
+      `;
     }
   }
 
-  $("#inspector-content").innerHTML = `
-    <div class="inspector-grid">
-      <div class="inspector-item"><b>Resolved Level</b><span>${LBL[r.level]}</span></div>
-      <div class="inspector-item"><b>Latency</b><span>${r.ms} ms</span></div>
-      <div class="inspector-item"><b>Cosine Similarity</b><span>${r.score > 0 ? r.score : "N/A (Miss)"}</span></div>
-      <div class="inspector-item"><b>Active Threshold</b><span>${r.threshold} (${r.category})</span></div>
-      <div class="inspector-item"><b>Coalesced</b><span>${r.coalesced ? "Yes (Shared LLM)" : "No"}</span></div>
-      <div class="inspector-item"><b>Log ID</b><span>${r.log_id || "N/A"}</span></div>
-    </div>
-    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">
-      <b>Routing Explanation:</b>
-      <p style="margin:4px 0 0;color:var(--ink);">${reason}</p>
+  const renderedContent = renderMarkdown(rawText);
+
+  return `
+    <div class="msg-row assistant-row" data-msg-idx="${msgIndex !== null ? msgIndex : ''}">
+      <div class="assistant-container">
+        <div class="assistant-avatar" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </div>
+        <div class="assistant-content">
+          <div class="assistant-markdown">${renderedContent}</div>
+          <div class="msg-footer">
+            ${badgeHtml}
+            <button class="action-icon-btn" onclick="copyText(this.closest('.assistant-content').querySelector('.assistant-markdown').innerText)" title="Copy answer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            ${feedbackHtml}
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }
 
-function setMeta(box, r, query) {
-  box.className = `msg ${r.level}`;
-  box.querySelector(".meta").innerHTML = `
-    <span class="badge ${r.level}">${LBL[r.level]}</span> · <strong>${r.ms} ms</strong>
-    ${r.level === "L2_semantic" ? ` · similarity <strong>${r.score}</strong> (thr ${r.threshold}, ${r.category})` : ""}
-    ${r.coalesced ? " · <em>coalesced with in-flight request</em>" : ""}
-  `;
-
-  updateInspector(r, query);
-
-  // Feedback buttons for L2 matches
-  if (r.level === "L2_semantic" && r.log_id) {
-    const f = document.createElement("div");
-    f.className = "row";
-    f.style.marginTop = "10px";
-    f.innerHTML = `
-      <button class="btn ghost" style="padding:6px 12px;font-size:13px;" data-g="1">👍 Good match</button>
-      <button class="btn ghost" style="padding:6px 12px;font-size:13px;" data-g="0">👎 False match</button>
-    `;
-    f.querySelectorAll("button").forEach(x => {
-      x.onclick = async () => {
-        const isGood = x.dataset.g === "1";
-        await api("/feedback", "POST", { log_id: r.log_id, good: isGood });
-        toast(isGood ? "Feedback recorded: Threshold relaxed slightly." : "Feedback recorded: Threshold tightened.");
-        f.remove();
-      };
-    });
-    box.append(f);
+function scrollToBottom(force = false) {
+  if (STATE.userScrolledUp && !force) return;
+  const viewport = $(".chat-viewport");
+  if (viewport) {
+    viewport.scrollTop = viewport.scrollHeight;
   }
 }
 
-async function ask() {
-  const qInput = $("#q");
-  const q = qInput.value.trim();
-  if (!q) return;
+// Track if user manually scrolled up
+function setupScrollDetection() {
+  const viewport = $(".chat-viewport");
+  if (!viewport) return;
+  viewport.addEventListener("scroll", () => {
+    const isAtBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 40;
+    STATE.userScrolledUp = !isAtBottom;
+  });
+}
 
-  const btn = $("#go");
-  btn.disabled = true;
-  btn.classList.add("loading");
+async function sendFeedback(logId, good, btn) {
+  try {
+    await api("/feedback", "POST", { log_id: logId, good });
+    btn.classList.add("active");
+    toast(good ? "Feedback saved: Threshold relaxed slightly" : "Feedback saved: Threshold tightened");
+  } catch (err) {
+    console.error("Feedback error:", err);
+  }
+}
 
+// ============================================================================
+// 6. SUBMISSION & STREAM HANDLING
+// ============================================================================
+async function handleSend() {
+  // If streaming is active, button acts as stop
+  if (STATE.isStreaming) {
+    if (STATE.abortController) {
+      STATE.abortController.abort();
+      STATE.abortController = null;
+    }
+    setStreamingState(false);
+    return;
+  }
+
+  const textarea = $("#q");
+  const query = textarea.value.trim();
+  if (!query) return;
+
+  // Ensure active chat
+  let chat = getCurrentChat();
+  if (!chat) {
+    createNewChat();
+    chat = getCurrentChat();
+  }
+
+  // Update title if first message
+  if (chat.messages.length === 0) {
+    chat.title = query.length > 32 ? query.slice(0, 32) + "…" : query;
+    saveChatsToStorage();
+    renderRecentChatsList();
+  }
+
+  // Append user message
+  chat.messages.push({ role: "user", text: query });
+  saveChatsToStorage();
+
+  // Reset textarea & height
+  textarea.value = "";
+  textarea.style.height = "auto";
+
+  // Re-render chat
+  renderActiveChatMessages();
+  STATE.userScrolledUp = false;
+  scrollToBottom(true);
+
+  // Request payload
   const body = {
-    query: q,
+    query,
     ns: $("#ns").value.trim() || "default",
     doc_ver: $("#ver").value.trim() || "v1",
     tag: $("#tag").value.trim(),
     use_cache: $("#usec").checked
   };
 
-  const box = document.createElement("div");
-  box.className = "msg";
-  box.innerHTML = `
-    <b>${esc(q)}</b>
-    <div class="meta mute">Resolving query...</div>
-    <div class="ans"></div>
+  const useStream = $("#stream").checked;
+  setStreamingState(true);
+  STATE.abortController = new AbortController();
+
+  // Create temporary assistant placeholder in DOM
+  const streamContainer = $("#chat-stream");
+  const placeholderRow = document.createElement("div");
+  placeholderRow.className = "msg-row assistant-row";
+  placeholderRow.innerHTML = `
+    <div class="assistant-container">
+      <div class="assistant-avatar" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      </div>
+      <div class="assistant-content">
+        <div class="assistant-markdown"><span class="streaming-cursor"></span></div>
+        <div class="msg-footer">
+          <span class="mute text-xs">Resolving query...</span>
+        </div>
+      </div>
+    </div>
   `;
+  streamContainer.appendChild(placeholderRow);
+  scrollToBottom(true);
 
-  const chat = $("#chat");
-  const empty = chat.querySelector(".empty-state");
-  if (empty) empty.remove();
+  const markdownDiv = placeholderRow.querySelector(".assistant-markdown");
+  const footerDiv = placeholderRow.querySelector(".msg-footer");
 
-  chat.prepend(box);
-  qInput.value = "";
-  const ans = box.querySelector(".ans");
+  let accumulatedText = "";
+  let resolvedMeta = null;
 
   try {
-    if ($("#stream").checked) {
-      const h = { "Content-Type": "application/json" };
+    if (useStream) {
+      const headers = { "Content-Type": "application/json" };
       const key = $("#apikey").value.trim();
-      if (key) h["x-api-key"] = key;
+      if (key) headers["x-api-key"] = key;
 
-      const resp = await fetch("/api/ask/stream", {
+      const response = await fetch("/api/ask/stream", {
         method: "POST",
-        headers: h,
-        body: JSON.stringify(body)
+        headers,
+        body: JSON.stringify(body),
+        signal: STATE.abortController.signal
       });
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail || "Stream request failed");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || "Stream connection failed");
       }
 
-      const rd = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      for (;;) {
-        const { done, value } = await rd.read();
+      while (true) {
+        const { done, value } = await reader.read();
         if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop();
-        for (const p of parts) {
-          if (!p.startsWith("data: ")) continue;
-          const o = JSON.parse(p.slice(6));
-          if (o.meta) setMeta(box, o.meta, q);
-          if (o.t) ans.textContent += o.t;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = JSON.parse(line.slice(6));
+
+          if (payload.meta) {
+            resolvedMeta = payload.meta;
+            updateInspector(resolvedMeta, query);
+          }
+          if (payload.t) {
+            accumulatedText += payload.t;
+            markdownDiv.innerHTML = renderMarkdown(accumulatedText) + '<span class="streaming-cursor"></span>';
+            scrollToBottom();
+          }
         }
       }
     } else {
-      const r = await api("/ask", "POST", body);
-      setMeta(box, r, q);
-      ans.textContent = r.answer;
+      // Non-streaming fallback
+      const result = await api("/ask", "POST", body, STATE.abortController.signal);
+      accumulatedText = result.answer;
+      resolvedMeta = result;
+      updateInspector(resolvedMeta, query);
     }
-  } catch (e) {
-    box.className = "msg";
-    box.style.borderLeftColor = "var(--bad)";
-    box.querySelector(".meta").innerHTML = `<span style="color:var(--bad);font-weight:600;">Error: ${esc(e.message)}</span>`;
+
+    // Finished streaming cleanly
+    chat.messages.push({
+      role: "assistant",
+      text: accumulatedText,
+      meta: resolvedMeta
+    });
+    saveChatsToStorage();
+
+    // Finalize placeholder with full markdown and interactive buttons
+    placeholderRow.outerHTML = buildAssistantHtml(accumulatedText, resolvedMeta, false, chat.messages.length - 1);
+    scrollToBottom();
+  } catch (err) {
+    if (err.name === "AbortError") {
+      // User aborted stream
+      if (accumulatedText) {
+        chat.messages.push({
+          role: "assistant",
+          text: accumulatedText + " *(Stream stopped)*",
+          meta: resolvedMeta
+        });
+        saveChatsToStorage();
+        placeholderRow.outerHTML = buildAssistantHtml(accumulatedText + " *(Stream stopped)*", resolvedMeta, false, chat.messages.length - 1);
+      } else {
+        placeholderRow.remove();
+      }
+    } else {
+      // Real API or network error
+      console.error("Query failed:", err);
+      chat.messages.push({
+        role: "assistant",
+        text: `Error: ${err.message}`,
+        error: true
+      });
+      saveChatsToStorage();
+      placeholderRow.outerHTML = buildAssistantHtml(err.message, null, true, chat.messages.length - 1);
+    }
   } finally {
-    btn.disabled = false;
-    btn.classList.remove("loading");
-    qInput.focus();
+    setStreamingState(false);
+    STATE.abortController = null;
   }
 }
 
-$("#go").onclick = ask;
-$("#q").onkeydown = e => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    ask();
+function setStreamingState(isStreaming) {
+  STATE.isStreaming = isStreaming;
+  const btn = $("#send-btn");
+  if (isStreaming) {
+    btn.classList.add("streaming");
+    btn.setAttribute("aria-label", "Stop generating");
+  } else {
+    btn.classList.remove("streaming");
+    btn.setAttribute("aria-label", "Send message");
   }
-};
+}
 
-const tbl = (el, head, rows) => {
-  $(el).innerHTML = rows.length
-    ? `<thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>`
-    : `<tbody><tr><td colspan="${head.length}" class="empty-state" style="text-align:center;padding:24px;">No records available.</td></tr></tbody>`;
+function retryLastQuery() {
+  const chat = getCurrentChat();
+  if (!chat || !chat.messages.length) return;
+
+  // Pop any failed message
+  const last = chat.messages[chat.messages.length - 1];
+  if (last.role === "assistant" && last.error) {
+    chat.messages.pop();
+  }
+
+  // Find user prompt
+  const lastUser = [...chat.messages].reverse().find(m => m.role === "user");
+  if (lastUser) {
+    $("#q").value = lastUser.text;
+    handleSend();
+  }
+}
+
+function attachChipEvents() {
+  $$(".prompt-chip").forEach(chip => {
+    chip.onclick = () => {
+      $("#q").value = chip.dataset.query;
+      handleSend();
+    };
+  });
+}
+
+// Auto-grow textarea
+function setupComposerTextarea() {
+  const textarea = $("#q");
+  textarea.addEventListener("input", () => {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 160) + "px";
+  });
+
+  textarea.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  });
+
+  $("#send-btn").onclick = handleSend;
+  $("#new-chat-btn").onclick = createNewChat;
+  $("#clear-chats-btn").onclick = clearAllChats;
+
+  $("#toggle-settings-btn").onclick = () => {
+    const box = $("#composer-settings");
+    box.classList.toggle("collapsed");
+  };
+}
+
+// ============================================================================
+// 7. REQUEST INSPECTOR DRAWER
+// ============================================================================
+function updateInspector(meta, query) {
+  if (!meta) return;
+  STATE.latestInspection = { meta, query };
+
+  let reason = "";
+  if (meta.level === "L1_exact") {
+    reason = "Exact normalized SHA-256 hash match found in L1 key-value cache (Redis/SQLite). Returned in sub-millisecond time with 0 LLM tokens consumed.";
+  } else if (meta.level === "L2_semantic") {
+    reason = `Cosine similarity score (${meta.score}) met category threshold (${meta.threshold}, ${meta.category}). Lexical antonym guard and Cross-Encoder reranker verified semantic equality.`;
+  } else {
+    reason = "No exact hash or semantic similarity above threshold. Delegated to L3 LLM generation. Cached entry stored for future hits.";
+    if (meta.coalesced) {
+      reason += " Coalesced: Request shared LLM execution with a concurrent identical in-flight query.";
+    }
+  }
+
+  const body = $("#inspector-body");
+  body.innerHTML = `
+    <div class="inspector-metric-card">
+      <b>Cache Tier Decision</b>
+      <span class="badge ${meta.level}" style="font-size:13px;padding:3px 10px;">${LBL[meta.level] || meta.level}</span>
+    </div>
+
+    <div class="inspector-metric-card">
+      <b>Response Latency</b>
+      <span>${meta.ms ? Math.round(meta.ms) + " ms" : "-"}</span>
+    </div>
+
+    <div class="inspector-metric-card">
+      <b>Cosine Similarity Score</b>
+      <span>${meta.score > 0 ? meta.score.toFixed(4) : "N/A (Miss)"}</span>
+    </div>
+
+    <div class="inspector-metric-card">
+      <b>Category & Threshold</b>
+      <span>${meta.category || "general"} · thr ${meta.threshold || 0.88}</span>
+    </div>
+
+    <div class="inspector-metric-card">
+      <b>Coalescing Status</b>
+      <span>${meta.coalesced ? "Yes (Shared in-flight execution)" : "No (Standalone)"}</span>
+    </div>
+
+    <div class="routing-explanation">
+      <strong style="display:block;margin-bottom:4px;font-size:12px;text-transform:uppercase;color:var(--accent);">Decision Analysis</strong>
+      ${reason}
+    </div>
+  `;
+}
+
+function openInspectorWithData(meta) {
+  updateInspector(meta, "Inspected message");
+  openInspector();
+}
+
+function openInspector() {
+  $("#inspector-drawer").classList.add("on");
+  $("#inspector-backdrop").classList.add("on");
+}
+
+function closeInspector() {
+  $("#inspector-drawer").classList.remove("on");
+  $("#inspector-backdrop").classList.remove("on");
+}
+
+function setupInspector() {
+  $("#open-inspector-btn").onclick = openInspector;
+  $("#close-inspector-btn").onclick = closeInspector;
+  $("#inspector-backdrop").onclick = closeInspector;
+}
+
+// ============================================================================
+// 8. PANEL SWITCHING & MOBILE SIDEBAR
+// ============================================================================
+function switchPanel(panelId) {
+  STATE.activePanel = panelId;
+
+  $$(".nav-item").forEach(btn => {
+    const isTarget = btn.dataset.panel === panelId;
+    btn.classList.toggle("on", isTarget);
+    btn.setAttribute("aria-selected", isTarget ? "true" : "false");
+  });
+
+  $$(".app-panel").forEach(panel => {
+    panel.classList.toggle("on", panel.id === panelId);
+  });
+
+  const heading = {
+    "chat-panel": "Chat",
+    "stats-panel": "Stats & Inspector",
+    "entries-panel": "Cache Entries",
+    "lab-panel": "Lab & Benchmark"
+  }[panelId] || "Semantic Cache";
+
+  $("#topbar-heading").textContent = heading;
+
+  if (panelId === "stats-panel") loadStats();
+  if (panelId === "entries-panel") loadEntries();
+
+  closeSidebar();
+}
+
+function openSidebar() {
+  $("#sidebar").classList.add("open");
+  $("#sidebar-backdrop").classList.add("on");
+}
+
+function closeSidebar() {
+  $("#sidebar").classList.remove("open");
+  $("#sidebar-backdrop").classList.remove("on");
+}
+
+function setupSidebarAndPanels() {
+  $$(".nav-item").forEach(btn => {
+    btn.onclick = () => switchPanel(btn.dataset.panel);
+  });
+
+  $("#hamburger-btn").onclick = openSidebar;
+  $("#sidebar-close-btn").onclick = closeSidebar;
+  $("#sidebar-backdrop").onclick = closeSidebar;
+}
+
+// ============================================================================
+// 9. THEME TOGGLE (Persistent)
+// ============================================================================
+function setupTheme() {
+  const savedTheme = localStorage.getItem("semantic_cache_theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
+
+  applyTheme(initialTheme);
+
+  $("#theme-toggle").onclick = () => {
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const next = current === "dark" ? "light" : "dark";
+    applyTheme(next);
+  };
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("semantic_cache_theme", theme);
+
+  if (theme === "light") {
+    $("#theme-icon-sun").style.display = "none";
+    $("#theme-icon-moon").style.display = "block";
+    $("#theme-text").textContent = "Light";
+  } else {
+    $("#theme-icon-sun").style.display = "block";
+    $("#theme-icon-moon").style.display = "none";
+    $("#theme-text").textContent = "Dark";
+  }
+}
+
+// ============================================================================
+// 10. STATS, ENTRIES & LAB RESTYLED
+// ============================================================================
+const renderTable = (selector, headers, rows) => {
+  const el = $(selector);
+  if (!rows || !rows.length) {
+    el.innerHTML = `<tbody><tr><td colspan="${headers.length}" style="text-align:center;padding:24px;color:var(--text-muted);">No records available.</td></tr></tbody>`;
+    return;
+  }
+  el.innerHTML = `
+    <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+  `;
 };
 
 async function loadStats() {
@@ -225,43 +815,46 @@ async function loadStats() {
     const ms = k => (L[k] ? Math.round(L[k].avg_ms) + " ms" : "-");
 
     $("#kpis").innerHTML = [
-      ["Cache Hit Rate", (s.hit_rate * 100).toFixed(1) + "%"],
+      ["Hit Rate", (s.hit_rate * 100).toFixed(1) + "%"],
       ["Total Requests", s.total],
       ["Cached Entries", s.entries],
       ["Tokens Saved", s.tokens_saved.toLocaleString()],
       ["Cost Saved", "$" + s.cost_saved.toFixed(4)],
       ["Avg L1 / L2 / LLM", `${ms("L1_exact")} / ${ms("L2_semantic")} / ${ms("L3_llm")}`]
-    ].map(([l, v]) => `
+    ].map(([label, val]) => `
       <div class="kpi">
-        <b>${v}</b>
-        <span>${l}</span>
+        <b>${val}</b>
+        <span>${label}</span>
       </div>
     `).join("");
 
     $("#thr").innerHTML = Object.entries(s.thresholds).map(([k, v]) => `
-      <label>${k}: <input type="number" step="0.01" min="0.5" max="0.99" id="t_${k}" value="${v}" style="width:85px"></label>
-    `).join("") + `<button class="btn" id="savethr">Save Thresholds</button>`;
+      <label class="setting-item" style="font-size:13px;">
+        <span>${k}:</span>
+        <input type="number" step="0.01" min="0.5" max="0.99" id="t_${k}" value="${v}" style="width:85px">
+      </label>
+    `).join("") + `<button class="btn" id="savethr" style="padding:6px 14px;">Save Thresholds</button>`;
 
     $("#savethr").onclick = async () => {
       await api("/threshold", "POST", { code: +$("#t_code").value, general: +$("#t_general").value });
       toast("Thresholds updated successfully");
     };
 
-    tbl(
+    renderTable(
       "#recent",
-      ["Query", "Routing Result", "Cosine Score", "Latency"],
+      ["Query", "Level", "Cosine Sim", "Latency"],
       s.recent.map(r => [
-        esc(r.query),
+        escapeHtml(r.query),
         `<span class="badge ${r.level}">${LBL[r.level]}</span>`,
         r.score > 0 ? r.score.toFixed(3) : "-",
         Math.round(r.ms) + " ms"
       ])
     );
 
-    tbl(
+    renderTable(
       "#top",
-      ["Query", "Reuses (Hits)"],
-      s.top.filter(t => t.hits).map(t => [esc(t.query), `<strong>${t.hits}</strong>`])
+      ["Query", "Hits (Reuses)"],
+      s.top.filter(t => t.hits).map(t => [escapeHtml(t.query), `<strong>${t.hits}</strong>`])
     );
   } catch (err) {
     console.error("Failed to load stats:", err);
@@ -270,24 +863,24 @@ async function loadStats() {
 
 async function loadEntries() {
   try {
-    const e = await api("/entries");
-    tbl(
+    const entries = await api("/entries");
+    renderTable(
       "#etable",
-      ["Query", "Answer Preview", "Namespace", "Tag", "Reuses", "Action"],
-      e.map(x => [
-        `<strong>${esc(x.query)}</strong>`,
-        esc(x.answer.slice(0, 85)) + (x.answer.length > 85 ? "…" : ""),
-        esc(x.ns),
-        esc(x.tag || "-"),
+      ["Query", "Answer Preview", "Namespace", "Tag", "Hits", "Action"],
+      entries.map(x => [
+        `<strong>${escapeHtml(x.query)}</strong>`,
+        escapeHtml(x.answer.slice(0, 80)) + (x.answer.length > 80 ? "…" : ""),
+        escapeHtml(x.ns),
+        escapeHtml(x.tag || "-"),
         x.hits,
-        `<button class="btn ghost" style="padding:4px 10px;font-size:12px;" data-d="${x.id}">Delete</button>`
+        `<button class="btn ghost text-xs" style="padding:4px 8px;" data-id="${x.id}">Delete</button>`
       ])
     );
 
-    document.querySelectorAll("[data-d]").forEach(b => {
+    $$("#etable [data-id]").forEach(b => {
       b.onclick = async () => {
-        await api("/entries/" + b.dataset.d, "DELETE");
-        toast("Entry deleted");
+        await api("/entries/" + b.dataset.id, "DELETE");
+        toast("Cache entry deleted");
         loadEntries();
       };
     });
@@ -296,105 +889,135 @@ async function loadEntries() {
   }
 }
 
-$("#clr").onclick = async () => {
-  if (confirm("Are you sure you want to purge all cached vectors and metadata?")) {
-    await api("/clear", "POST");
+function setupEntriesAndLab() {
+  $("#clr").onclick = async () => {
+    if (confirm("Purge every cached vector and database record?")) {
+      await api("/clear", "POST");
+      loadEntries();
+      toast("Cache completely cleared");
+    }
+  };
+
+  $("#inv").onclick = async () => {
+    const tag = $("#invtag").value.trim();
+    if (!tag) {
+      toast("Please enter a tag to invalidate", true);
+      return;
+    }
+    const r = await api("/invalidate", "POST", { tag });
+    toast(`${r.deleted} entries invalidated`);
+    $("#invtag").value = "";
     loadEntries();
-    toast("Cache purged completely");
-  }
-};
+  };
 
-$("#inv").onclick = async () => {
-  const tag = $("#invtag").value.trim();
-  if (!tag) {
-    toast("Please enter a tag to invalidate", true);
-    return;
-  }
-  const r = await api("/invalidate", "POST", { tag });
-  toast(`${r.deleted} entries invalidated`);
-  $("#invtag").value = "";
-  loadEntries();
-};
+  $("#dowarm").onclick = async () => {
+    const q = $("#warm").value.split("\n").filter(x => x.trim());
+    if (!q.length) {
+      toast("Enter one or more queries to warm", true);
+      return;
+    }
+    toast("Warming cache in background...");
+    const r = await api("/warm", "POST", { queries: q, ns: $("#ns").value.trim() || "default" });
+    toast(`Warmed ${r.warmed} queries into semantic cache`);
+    $("#warm").value = "";
+  };
 
-$("#dowarm").onclick = async () => {
-  const q = $("#warm").value.split("\n").filter(x => x.trim());
-  if (!q.length) {
-    toast("Please enter queries to warm", true);
-    return;
-  }
-  toast("Warming cache in background...");
-  const r = await api("/warm", "POST", { queries: q, ns: $("#ns").value.trim() || "default" });
-  toast(`Warmed ${r.warmed} queries into semantic cache`);
-  $("#warm").value = "";
-};
+  $("#doeval").onclick = async () => {
+    const btn = $("#doeval");
+    btn.disabled = true;
+    toast("Running accuracy & threshold evaluation...");
 
-$("#doeval").onclick = async () => {
-  const btn = $("#doeval");
-  btn.disabled = true;
-  toast("Running evaluation sweep...");
+    try {
+      const d = await api("/evaluate");
+      const c = d.curve;
+      const W = 620, H = 220;
+      const x = t => 45 + ((t - 0.5) / 0.48) * (W - 70);
+      const y = v => H - 25 - v * (H - 50);
 
-  try {
-    const d = await api("/evaluate");
-    const c = d.curve;
-    const W = 620, H = 220;
-    const x = t => 45 + ((t - 0.5) / 0.48) * (W - 70);
-    const y = v => H - 25 - v * (H - 50);
+      const line = (k, col) => `<polyline fill="none" stroke="${col}" stroke-width="2.5" points="${c.map(p => x(p.t) + "," + y(p[k])).join(" ")}"/>`;
 
-    const line = (k, col) => `<polyline fill="none" stroke="${col}" stroke-width="2.5" points="${c.map(p => x(p.t) + "," + y(p[k])).join(" ")}"/>`;
+      $("#evalout").innerHTML = `
+        <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Precision & Recall by Threshold">
+          ${[0, 0.5, 1].map(v => `<line x1="45" x2="${W - 20}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border-subtle)"/><text x="8" y="${y(v) + 4}" fill="var(--text-muted)" font-size="11">${v}</text>`).join("")}
+          ${c.filter((_, i) => i % 3 === 0).map(p => `<text x="${x(p.t)}" y="${H - 6}" fill="var(--text-muted)" font-size="11" text-anchor="middle">${p.t}</text>`).join("")}
+          ${line("precision", "var(--accent)")}
+          ${line("recall", "var(--hit-l2)")}
+          ${line("precision_rr", "var(--hit-l3)")}
+          <text x="${W - 130}" y="16" fill="var(--accent)" font-size="11" font-weight="600">■ Raw Precision</text>
+          <text x="${W - 260}" y="16" fill="var(--hit-l3)" font-size="11" font-weight="600">■ Precision + Reranker</text>
+          <text x="${W - 65}" y="16" fill="var(--hit-l2)" font-size="11" font-weight="600">■ Recall</text>
+        </svg>
+        <div class="scroll" style="margin-top:14px;">
+          <table>
+            <thead><tr><th>Test Pair</th><th>Paraphrase</th><th>Cosine Sim</th><th>Reranker</th><th>Status</th></tr></thead>
+            <tbody>
+              ${d.pairs.map(p => `
+                <tr>
+                  <td>${escapeHtml(p.a)}<br><span class="mute">${escapeHtml(p.b)}</span></td>
+                  <td>${p.same ? '<strong style="color:var(--hit-l2)">Yes</strong>' : '<span class="mute">No</span>'}</td>
+                  <td>${p.sim}</td>
+                  <td>${p.rerank}</td>
+                  <td>${p.pass ? '<span class="badge L2_semantic">Accepted</span>' : '<span class="badge L3_llm">Rejected</span>'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+      toast("Evaluation sweep completed");
+    } catch (err) {
+      toast("Evaluation failed: " + err.message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  };
 
-    $("#evalout").innerHTML = `
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Precision & Recall by Threshold">
-        ${[0, 0.5, 1].map(v => `<line x1="45" x2="${W - 20}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="8" y="${y(v) + 4}" fill="var(--mute)" font-size="11">${v}</text>`).join("")}
-        ${c.filter((_, i) => i % 3 === 0).map(p => `<text x="${x(p.t)}" y="${H - 6}" fill="var(--mute)" font-size="11" text-anchor="middle">${p.t}</text>`).join("")}
-        ${line("precision", "var(--acc)")}
-        ${line("recall", "var(--hit)")}
-        ${line("precision_rr", "var(--miss)")}
-        <text x="${W - 130}" y="16" fill="var(--acc)" font-size="11" font-weight="600">■ Raw Precision</text>
-        <text x="${W - 250}" y="16" fill="var(--miss)" font-size="11" font-weight="600">■ Precision + Reranker</text>
-        <text x="${W - 65}" y="16" fill="var(--hit)" font-size="11" font-weight="600">■ Recall</text>
-      </svg>
-      <div class="scroll" style="margin-top:14px;">
-        <table>
-          <thead><tr><th>Test Pair</th><th>Paraphrase</th><th>Cosine Sim</th><th>Reranker</th><th>Cache Hit</th></tr></thead>
-          <tbody>
-            ${d.pairs.map(p => `
-              <tr>
-                <td>${esc(p.a)}<br><span class="mute">${esc(p.b)}</span></td>
-                <td>${p.same ? '<strong style="color:var(--hit)">Yes</strong>' : '<span class="mute">No</span>'}</td>
-                <td>${p.sim}</td>
-                <td>${p.rerank}</td>
-                <td>${p.pass ? '<span class="badge L2_semantic">Accepted</span>' : '<span class="badge L3_llm">Rejected</span>'}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
+  $("#dosim").onclick = async () => {
+    const r = await api(`/simulate?queries=${$("#sq").value}&hit_rate=${$("#sh").value}&llm_ms=${$("#sl").value}`);
+    $("#simout").innerHTML = [
+      ["LLM Calls Saved", r.llm_calls_saved.toLocaleString()],
+      ["Time Saved", r.time_saved_min + " min"],
+      ["Cost Saved", "$" + r.cost_saved.toFixed(2)],
+      ["Blended Latency", r.avg_ms + " ms"]
+    ].map(([l, v]) => `
+      <div class="kpi">
+        <b>${v}</b>
+        <span>${l}</span>
       </div>
-    `;
-    toast("Evaluation complete");
+    `).join("");
+  };
+}
+
+// Fetch live backend configuration
+async function checkBackendConfig() {
+  try {
+    const c = await api("/config");
+    $("#cfg-text").textContent = `L1: ${c.l1} · Qdrant: ${c.vectors} · Reranker: ${c.reranker ? 'ON' : 'OFF'}`;
   } catch (err) {
-    toast("Evaluation failed: " + err.message, true);
-  } finally {
-    btn.disabled = false;
+    $("#cfg").classList.add("offline");
+    $("#cfg-text").textContent = "Backend Offline";
   }
-};
+}
 
-$("#dosim").onclick = async () => {
-  const r = await api(`/simulate?queries=${$("#sq").value}&hit_rate=${$("#sh").value}&llm_ms=${$("#sl").value}`);
-  $("#simout").innerHTML = [
-    ["LLM Calls Saved", r.llm_calls_saved.toLocaleString()],
-    ["Time Saved", r.time_saved_min + " min"],
-    ["Cost Saved", "$" + r.cost_saved.toFixed(2)],
-    ["Blended Latency", r.avg_ms + " ms"]
-  ].map(([l, v]) => `
-    <div class="kpi">
-      <b>${v}</b>
-      <span>${l}</span>
-    </div>
-  `).join("");
-};
+// ============================================================================
+// 11. INITIALIZATION
+// ============================================================================
+window.addEventListener("DOMContentLoaded", () => {
+  setupTheme();
+  loadChatsFromStorage();
 
-api("/config").then(c => {
-  $("#cfg").textContent = `L1: ${c.l1} · Qdrant: ${c.vectors} · Reranker: ${c.reranker ? "Enabled" : "Disabled"}`;
-}).catch(() => {
-  $("#cfg").textContent = "API Offline";
+  if (!STATE.chats.length) {
+    createNewChat();
+  } else {
+    STATE.currentChatId = STATE.chats[0].id;
+    renderRecentChatsList();
+    renderActiveChatMessages();
+  }
+
+  setupComposerTextarea();
+  setupInspector();
+  setupSidebarAndPanels();
+  setupEntriesAndLab();
+  setupScrollDetection();
+  checkBackendConfig();
 });

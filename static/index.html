@@ -3,141 +3,341 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Production Semantic Cache</title>
+  <title>Semantic Cache Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <h1>⚡ Semantic Cache</h1>
-      <span id="cfg" class="badge-sys mute">Connecting...</span>
-    </div>
-    <nav id="tabs" role="tablist" aria-label="Main Navigation">
-      <button data-t="ask" class="tab-btn on" role="tab" aria-selected="true" aria-controls="ask">Ask</button>
-      <button data-t="stats" class="tab-btn" role="tab" aria-selected="false" aria-controls="stats">Stats</button>
-      <button data-t="entries" class="tab-btn" role="tab" aria-selected="false" aria-controls="entries">Entries</button>
-      <button data-t="lab" class="tab-btn" role="tab" aria-selected="false" aria-controls="lab">Lab & Benchmark</button>
-    </nav>
-    <div class="row header-auth">
-      <input id="apikey" type="password" placeholder="API key (optional)" aria-label="API Key" style="width:160px">
-    </div>
-  </header>
+  <div class="app-shell">
+    <!-- Mobile Backdrop -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
 
-  <main>
-    <!-- Tab 1: Ask -->
-    <section id="ask" class="tab-pane on" role="tabpanel">
-      <div class="card">
-        <h2>Query the LLM Cache</h2>
-        <div class="row">
-          <input type="text" id="q" placeholder="e.g. How do I reset my password?" aria-label="Question prompt" autocomplete="off">
-          <button class="btn" id="go" aria-label="Submit Question">
-            <span class="btn-text">Ask</span>
-            <span class="btn-spinner" aria-hidden="true"></span>
+    <!-- 1. Left Sidebar (~260px) -->
+    <aside id="sidebar" class="sidebar" aria-label="Sidebar Navigation">
+      <div class="sidebar-header">
+        <div class="logo-group">
+          <div class="logo-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="app-title">Semantic Cache</span>
+            <span class="app-subtitle">v2.0 · Enterprise</span>
+          </div>
+        </div>
+        <button id="sidebar-close-btn" class="icon-btn mobile-only" aria-label="Close sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-action">
+        <button id="new-chat-btn" class="new-chat-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>New chat</span>
+        </button>
+      </div>
+
+      <!-- Navigation links -->
+      <nav class="nav-menu" role="tablist" aria-label="Application sections">
+        <button class="nav-item on" data-panel="chat-panel" role="tab" aria-selected="true" aria-controls="chat-panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span>Chat</span>
+        </button>
+        <button class="nav-item" data-panel="stats-panel" role="tab" aria-selected="false" aria-controls="stats-panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          <span>Stats & Inspector</span>
+        </button>
+        <button class="nav-item" data-panel="entries-panel" role="tab" aria-selected="false" aria-controls="entries-panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+          <span>Entries</span>
+        </button>
+        <button class="nav-item" data-panel="lab-panel" role="tab" aria-selected="false" aria-controls="lab-panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"></path><path d="M14 9.3V2"></path><path d="M8.5 2h7"></path><path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path><path d="M5.52 16h12.96"></path></svg>
+          <span>Lab & Benchmark</span>
+        </button>
+      </nav>
+
+      <!-- Recent chats -->
+      <div class="recent-chats-section">
+        <div class="recent-header">
+          <span>Recent chats</span>
+          <button id="clear-chats-btn" class="icon-btn-text" title="Clear all local conversations" aria-label="Clear chat history">Clear</button>
+        </div>
+        <div id="recent-chats-list" class="recent-chats-list" role="list">
+          <!-- Filled dynamically -->
+        </div>
+      </div>
+
+      <!-- Bottom controls & status -->
+      <div class="sidebar-footer">
+        <div class="theme-row">
+          <span class="mute text-xs">Appearance</span>
+          <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle dark/light theme">
+            <svg id="theme-icon-sun" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            <svg id="theme-icon-moon" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            <span id="theme-text">Theme</span>
           </button>
         </div>
-        <div class="row config-row">
-          <label>Namespace <input id="ns" value="default" size="10"></label>
-          <label>Doc version <input id="ver" value="v1" size="5"></label>
-          <label>Tag <input id="tag" placeholder="e.g. auth" size="8"></label>
-          <label class="chk-label"><input type="checkbox" id="usec" checked> Use Cache</label>
-          <label class="chk-label"><input type="checkbox" id="stream" checked> SSE Stream</label>
-        </div>
-      </div>
 
-      <div class="chat-container">
-        <div id="chat" aria-live="polite">
-          <div class="empty-state">
-            <div class="empty-icon">💡</div>
-            <h3>No queries yet</h3>
-            <p>Ask a question, then try rephrasing it slightly to see an instant <strong>L2 semantic hit</strong>!</p>
+        <div class="auth-box">
+          <label for="apikey" class="sr-only">API Key</label>
+          <div class="input-with-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <input id="apikey" type="password" placeholder="API key (optional)" autocomplete="off">
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Tab 2: Stats & Inspector -->
-    <section id="stats" class="tab-pane" role="tabpanel">
-      <div class="kpis" id="kpis" aria-live="polite"></div>
-
-      <!-- Request Inspector Panel -->
-      <div class="card inspector-card">
-        <div class="row justify-between">
-          <h2>🔍 Request Inspector (Latest Resolution)</h2>
-          <span id="inspect-badge" class="badge L3_llm">None</span>
-        </div>
-        <div id="inspector-content" class="inspector-box">
-          <p class="mute">Submit a query from the Ask tab to inspect its tier routing, vector similarity, reranker verdict, and coalescing state.</p>
+        <div id="cfg" class="backend-status" title="Live architecture status">
+          <span class="status-dot"></span>
+          <span id="cfg-text">Connecting to backend...</span>
         </div>
       </div>
+    </aside>
 
-      <div class="card">
-        <h2>Adaptive Thresholds (Auto-tuned via feedback)</h2>
-        <div class="row" id="thr"></div>
-      </div>
-
-      <div class="card">
-        <h2>Recent Request Log</h2>
-        <div class="scroll">
-          <table id="recent" aria-label="Recent Requests"></table>
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      <!-- Top Bar (Mobile Hamburger + Current Panel title) -->
+      <header class="topbar">
+        <button id="hamburger-btn" class="hamburger-btn" aria-label="Open sidebar" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div class="topbar-title">
+          <span id="topbar-heading">Chat</span>
         </div>
-      </div>
-
-      <div class="card">
-        <h2>Most Reused Cache Entries</h2>
-        <div class="scroll">
-          <table id="top" aria-label="Top Reused Entries"></table>
+        <div class="topbar-actions">
+          <button id="open-inspector-btn" class="inspector-pill-btn" aria-label="Open Request Inspector">
+            <span class="pulse-indicator"></span>
+            <span>Inspector</span>
+          </button>
         </div>
-      </div>
-    </section>
+      </header>
 
-    <!-- Tab 3: Entries -->
-    <section id="entries" class="tab-pane" role="tabpanel">
-      <div class="card">
-        <div class="row justify-between flex-wrap">
-          <h2 style="margin:0;">Stored Cache Records</h2>
-          <div class="row">
-            <input id="invtag" placeholder="Tag to invalidate" aria-label="Tag to invalidate" size="16">
-            <button class="btn ghost" id="inv">Invalidate Tag</button>
-            <button class="btn danger" id="clr">Purge All</button>
+      <main class="content-scroll">
+        <!-- 2. Chat Panel (Default) -->
+        <section id="chat-panel" class="app-panel on" role="tabpanel">
+          <div class="chat-viewport">
+            <div id="chat-stream" class="chat-stream" aria-live="polite">
+              <!-- Empty state view -->
+              <div id="empty-state" class="chat-empty-state">
+                <div class="greeting-badge">⚡ Instant Semantic Acceleration</div>
+                <h2 class="greeting-heading">Where should we start?</h2>
+                <p class="greeting-desc">Ask a question to see multi-tier caching in action. Repeated questions hit L1 in &lt;15ms; semantic rephrasings hit L2 with Qdrant and Cross-Encoder verification.</p>
+
+                <div class="prompt-chips-grid">
+                  <button class="prompt-chip" data-query="How do I reset my password?">
+                    <span class="chip-title">How do I reset my password?</span>
+                    <span class="chip-sub">Tests authentication FAQ caching</span>
+                  </button>
+                  <button class="prompt-chip" data-query="What is retrieval augmented generation (RAG)?">
+                    <span class="chip-title">What is RAG?</span>
+                    <span class="chip-sub">Architecture and vector databases</span>
+                  </button>
+                  <button class="prompt-chip" data-query="How to install Python on Windows 11?">
+                    <span class="chip-title">Install Python on Windows</span>
+                    <span class="chip-sub">Step-by-step setup procedure</span>
+                  </button>
+                  <button class="prompt-chip" data-query="Explain the difference between SQL and NoSQL">
+                    <span class="chip-title">SQL vs NoSQL comparison</span>
+                    <span class="chip-sub">Technical differences & tradeoffs</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="scroll" style="margin-top:14px;">
-          <table id="etable" aria-label="Stored Cache Entries"></table>
-        </div>
-      </div>
-    </section>
 
-    <!-- Tab 4: Lab & Benchmark -->
-    <section id="lab" class="tab-pane" role="tabpanel">
-      <div class="card">
-        <h2>Warm the Cache (Batch Pre-population)</h2>
-        <textarea id="warm" placeholder="One question per line...&#10;What is RAG?&#10;How to reset my password?"></textarea>
-        <div class="row" style="margin-top:10px">
-          <button class="btn" id="dowarm">Warm Cache</button>
-        </div>
-      </div>
+          <!-- 3. Composer pinned at bottom -->
+          <div class="composer-container">
+            <div class="composer-inner">
+              <!-- Settings expansion accordion -->
+              <div id="composer-settings" class="composer-settings collapsed">
+                <div class="settings-grid">
+                  <label class="setting-item">
+                    <span>Namespace</span>
+                    <input id="ns" value="default" placeholder="default">
+                  </label>
+                  <label class="setting-item">
+                    <span>Doc version</span>
+                    <input id="ver" value="v1" placeholder="v1">
+                  </label>
+                  <label class="setting-item">
+                    <span>Tag</span>
+                    <input id="tag" placeholder="e.g. faq">
+                  </label>
+                  <label class="setting-checkbox">
+                    <input type="checkbox" id="usec" checked>
+                    <span>Use Cache</span>
+                  </label>
+                  <label class="setting-checkbox">
+                    <input type="checkbox" id="stream" checked>
+                    <span>SSE Stream</span>
+                  </label>
+                </div>
+              </div>
 
-      <div class="card">
-        <h2>Evaluation: Accuracy vs Threshold Sweep</h2>
-        <p class="mute">Calculates raw cosine similarity precision & recall versus Cross-Encoder reranker validation.</p>
-        <button class="btn" id="doeval">Run Evaluation</button>
-        <div id="evalout" style="margin-top:14px;"></div>
-      </div>
+              <!-- Input bar -->
+              <div class="composer-bar">
+                <button id="toggle-settings-btn" class="composer-action-btn" title="Cache configuration parameters" aria-label="Toggle parameters">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
 
-      <div class="card">
-        <h2>Cost & Latency ROI Simulator</h2>
-        <div class="row">
-          <label>Queries <input type="number" id="sq" value="10000" style="width:100px"></label>
-          <label>Hit rate <input type="number" id="sh" value="0.6" step="0.05" style="width:80px"></label>
-          <label>LLM ms <input type="number" id="sl" value="1500" style="width:90px"></label>
-          <button class="btn" id="dosim">Calculate Savings</button>
+                <textarea id="q" rows="1" placeholder="Ask anything... (Shift+Enter for newline)" aria-label="Query prompt"></textarea>
+
+                <button id="send-btn" class="send-btn" aria-label="Send message">
+                  <!-- Send icon -->
+                  <svg id="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  <!-- Stop icon -->
+                  <svg id="stop-icon" class="stop-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+                </button>
+              </div>
+
+              <div class="composer-footnote">
+                <span>Semantic Cache resolves queries via L1 exact hash or L2 vector embedding before hitting LLM.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Stats Panel -->
+        <section id="stats-panel" class="app-panel panel-container" role="tabpanel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">System Metrics & KPIs</h2>
+              <p class="panel-desc">Real-time telemetry measuring cache hit distribution, tokens saved, and latency savings.</p>
+            </div>
+          </div>
+
+          <div class="kpis" id="kpis" aria-live="polite">
+            <div class="kpi skeleton"><b>...</b><span>Loading telemetry</span></div>
+            <div class="kpi skeleton"><b>...</b><span>Loading telemetry</span></div>
+            <div class="kpi skeleton"><b>...</b><span>Loading telemetry</span></div>
+            <div class="kpi skeleton"><b>...</b><span>Loading telemetry</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Adaptive Category Thresholds</h3>
+              <span class="badge L2_semantic">Dynamic</span>
+            </div>
+            <p class="mute text-sm">Self-tunes dynamically based on user feedback (thumbs up / down) or manual overrides.</p>
+            <div class="row" id="thr" style="margin-top:12px;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Recent Request Stream</h3>
+            </div>
+            <div class="scroll">
+              <table id="recent" aria-label="Recent Requests"></table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Most Reused Cache Records</h3>
+            </div>
+            <div class="scroll">
+              <table id="top" aria-label="Top Reused Entries"></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. Entries Panel -->
+        <section id="entries-panel" class="app-panel panel-container" role="tabpanel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Cache Storage Index</h2>
+              <p class="panel-desc">Inspected records currently indexed in SQLite metadata and Qdrant vector storage.</p>
+            </div>
+            <div class="panel-actions">
+              <div class="inline-filter-group">
+                <input id="invtag" placeholder="Tag to invalidate" aria-label="Tag to invalidate" size="16">
+                <button class="btn ghost" id="inv">Invalidate tag</button>
+              </div>
+              <button class="btn danger" id="clr">Purge all</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="scroll">
+              <table id="etable" aria-label="Stored Cache Entries"></table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. Lab & Benchmark Panel -->
+        <section id="lab-panel" class="app-panel panel-container" role="tabpanel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Lab & Verification Tools</h2>
+              <p class="panel-desc">Warm cache embeddings, execute accuracy sweeps on hard negative pairs, and simulate latency ROI.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Pre-warm Semantic Cache</h3>
+            </div>
+            <p class="mute text-sm">Batch encodes queries using micro-batching so future user queries hit L1 or L2 instantly.</p>
+            <textarea id="warm" placeholder="Enter one query per line...&#10;How do I reset my password?&#10;What is RAG?&#10;How to install Python on Windows?"></textarea>
+            <div class="row" style="margin-top:12px">
+              <button class="btn" id="dowarm">Warm cache batch</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Accuracy vs Threshold Sweep</h3>
+              <button class="btn ghost text-sm" id="doeval">Run evaluation</button>
+            </div>
+            <p class="mute text-sm">Validates raw cosine similarity precision/recall against Cross-Encoder reranker verification on antonyms.</p>
+            <div id="evalout" style="margin-top:16px;"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>ROI & Cost Simulator</h3>
+            </div>
+            <div class="row flex-wrap" style="margin-top:8px;">
+              <label class="setting-item">
+                <span>Monthly queries</span>
+                <input type="number" id="sq" value="10000" style="width:110px">
+              </label>
+              <label class="setting-item">
+                <span>Estimated hit rate</span>
+                <input type="number" id="sh" value="0.6" step="0.05" style="width:90px">
+              </label>
+              <label class="setting-item">
+                <span>Base LLM latency (ms)</span>
+                <input type="number" id="sl" value="1500" style="width:100px">
+              </label>
+              <button class="btn" id="dosim" style="align-self:flex-end;">Calculate savings</button>
+            </div>
+            <div id="simout" class="kpis" style="margin-top:16px"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Request Inspector Drawer / Flyout -->
+    <div id="inspector-backdrop" class="drawer-backdrop" aria-hidden="true"></div>
+    <aside id="inspector-drawer" class="inspector-drawer" aria-label="Request Inspector Drawer">
+      <div class="drawer-header">
+        <div class="row align-center gap-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <h3 class="drawer-title">Request Inspector</h3>
         </div>
-        <div id="simout" class="kpis" style="margin-top:14px"></div>
+        <button id="close-inspector-btn" class="icon-btn" aria-label="Close Inspector">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       </div>
-    </section>
-  </main>
+      <div id="inspector-body" class="drawer-body">
+        <p class="mute">Submit a query in the Chat panel to inspect routing decisions, vector similarity scores, and execution telemetry.</p>
+      </div>
+    </aside>
+  </div>
 
   <div id="toast" role="status" aria-live="assertive"></div>
   <script src="/static/app.js"></script>
