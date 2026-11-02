@@ -10,3 +10,4 @@ htmlcov/
 *.png
 .mypy_cache/
 .ruff_cache/
+
