@@ -1113,6 +1113,25 @@ tr:hover td {
   display: block;
 }
 
+/* Drag & Drop Zone for File Upload */
+.drop-zone {
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 26px 20px;
+  text-align: center;
+  background: var(--bg-surface);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--accent);
+  background: var(--bg-surface-hover);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;

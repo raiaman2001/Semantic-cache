@@ -1,9 +1,11 @@
 import asyncio
+import csv
+import io
 import json
 import re
 import time
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -308,6 +310,130 @@ async def chat_completions(r: ChatCompletionRequest):
             "X-Response-Time-Ms": str(elapsed_ms),
         },
     )
+
+
+def parse_import_file(text: str, filename: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+
+    if filename.endswith(".json") or text.strip().startswith(("[", "{")):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                for key in ["data", "conversations", "items", "history", "pairs", "rows"]:
+                    if key in data and isinstance(data[key], list):
+                        data = data[key]
+                        break
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        q = item.get("question") or item.get("query") or item.get("prompt") or item.get("input") or item.get("user") or ""
+                        a = item.get("answer") or item.get("response") or item.get("output") or item.get("completion") or item.get("assistant") or ""
+                        if q and a:
+                            pairs.append((str(q), str(a)))
+                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                        pairs.append((str(item[0]), str(item[1])))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON file format: {e}")
+    else:
+        try:
+            reader = csv.reader(io.StringIO(text))
+            rows = list(reader)
+            if not rows:
+                return []
+
+            header = [c.lower().strip() for c in rows[0]]
+            q_idx, a_idx = -1, -1
+
+            for idx, col in enumerate(header):
+                if any(k in col for k in ["question", "query", "prompt", "input", "user"]):
+                    q_idx = idx
+                elif any(k in col for k in ["answer", "response", "output", "completion", "assistant"]):
+                    a_idx = idx
+
+            if q_idx != -1 and a_idx != -1 and len(rows) > 1:
+                for row in rows[1:]:
+                    if len(row) > max(q_idx, a_idx):
+                        pairs.append((row[q_idx], row[a_idx]))
+            else:
+                start_row = 1 if (len(rows) > 1 and "query" in rows[0][0].lower()) else 0
+                for row in rows[start_row:]:
+                    if len(row) >= 2:
+                        pairs.append((row[0], row[1]))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid CSV file format: {e}")
+
+    return pairs
+
+
+@router.post("/import")
+async def import_history(
+    file: UploadFile = File(...),
+    ns: str = "default",
+):
+    svc = get_cache_service()
+    content = await file.read()
+    text = content.decode("utf-8", errors="ignore")
+    pairs = parse_import_file(text, file.filename.lower() if file.filename else "")
+
+    if not pairs:
+        raise HTTPException(status_code=400, detail="No valid (question, answer) pairs found in uploaded file.")
+
+    t0 = time.time()
+    model_name = svc.settings.gemini_model
+    doc_ver = "v1"
+    ttl = float(svc.settings.default_ttl)
+    imported = 0
+
+    for q, a in pairs:
+        q_str = str(q).strip()
+        a_str = str(a).strip()
+        if not q_str or not a_str:
+            continue
+        key = compute_cache_key(ns, model_name, doc_ver, q_str)
+        await svc.store(
+            query=q_str,
+            answer=a_str,
+            ns=ns,
+            model=model_name,
+            doc_ver=doc_ver,
+            tag="historical_import",
+            ttl=ttl,
+            key=key,
+            vec=None,
+        )
+        imported += 1
+
+    elapsed_ms = round((time.time() - t0) * 1000, 1)
+    return {
+        "status": "success",
+        "imported": imported,
+        "total_parsed": len(pairs),
+        "elapsed_ms": elapsed_ms,
+        "message": f"Successfully loaded {imported} historical Q&A pairs into L1 & L2 cache in {elapsed_ms}ms.",
+    }
+
+
+@router.get("/import/sample/{fmt}")
+def get_sample_file(fmt: str):
+    if fmt == "csv":
+        sample_csv = 'question,answer\n"How do I reset my password?","Go to settings -> Security -> Reset Password."\n"What is the refund policy?","Refunds are processed within 5 business days."\n"How to install Python on Windows?","Download the installer from python.org and check Add to PATH."\n'
+        return Response(
+            content=sample_csv,
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="sample_chat_history.csv"'},
+        )
+    elif fmt == "json":
+        sample_json = json.dumps([
+            {"question": "How do I reset my password?", "answer": "Go to settings -> Security -> Reset Password."},
+            {"question": "What is the refund policy?", "answer": "Refunds are processed within 5 business days."},
+            {"question": "How to install Python on Windows?", "answer": "Download the installer from python.org and check Add to PATH."}
+        ], indent=2)
+        return Response(
+            content=sample_json,
+            media_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="sample_chat_history.json"'},
+        )
+    raise HTTPException(status_code=400, detail="Invalid format. Use 'csv' or 'json'.")
 
 
 @router.get("/stats")

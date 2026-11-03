@@ -1167,6 +1167,110 @@ function setupIntegrationPanel() {
       }
     };
   }
+
+  // History File Upload Logic
+  const fileInput = $("#history-file-input");
+  const dropZone = $("#history-drop-zone");
+  const fileNameDisplay = $("#selected-file-name");
+  const uploadBtn = $("#btn-upload-history");
+  const resultAlert = $("#import-result-alert");
+
+  let selectedFile = null;
+
+  function handleFileSelect(file) {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".csv") && !name.endsWith(".json")) {
+      toast("Please select a .csv or .json file", true);
+      return;
+    }
+    selectedFile = file;
+    if (fileNameDisplay) {
+      fileNameDisplay.textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      fileNameDisplay.style.display = "block";
+    }
+    if (uploadBtn) uploadBtn.disabled = false;
+  }
+
+  if (fileInput) {
+    fileInput.onchange = (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleFileSelect(e.target.files[0]);
+      }
+    };
+  }
+
+  if (dropZone) {
+    dropZone.ondragover = (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    };
+    dropZone.ondragleave = () => {
+      dropZone.classList.remove("dragover");
+    };
+    dropZone.ondrop = (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFileSelect(e.dataTransfer.files[0]);
+      }
+    };
+  }
+
+  if (uploadBtn) {
+    uploadBtn.onclick = async () => {
+      if (!selectedFile) {
+        toast("No file selected", true);
+        return;
+      }
+      uploadBtn.disabled = true;
+      uploadBtn.innerHTML = "<span>Ingesting into Cache...</span>";
+      if (resultAlert) resultAlert.style.display = "none";
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      const ns = $("#import-ns") ? $("#import-ns").value.trim() : "default";
+
+      try {
+        const res = await fetch(`/api/import?ns=${encodeURIComponent(ns)}`, {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Upload failed");
+        }
+
+        if (resultAlert) {
+          resultAlert.style.display = "block";
+          resultAlert.style.background = "var(--accent-subtle)";
+          resultAlert.style.border = "1px solid var(--accent)";
+          resultAlert.style.color = "var(--text-primary)";
+          resultAlert.innerHTML = `
+            <strong>Success!</strong> ${data.message}
+            <div class="text-xs mute" style="margin-top:4px;">Loaded without calling any LLM API (Zero cost).</div>
+          `;
+        }
+        toast(`Imported ${data.imported} Q&A pairs into cache!`);
+        selectedFile = null;
+        if (fileNameDisplay) fileNameDisplay.style.display = "none";
+        fileInput.value = "";
+      } catch (err) {
+        if (resultAlert) {
+          resultAlert.style.display = "block";
+          resultAlert.style.background = "var(--danger-subtle)";
+          resultAlert.style.border = "1px solid var(--danger)";
+          resultAlert.style.color = "var(--danger)";
+          resultAlert.textContent = "Error: " + err.message;
+        }
+        toast("Failed to import history: " + err.message, true);
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = "<span>Upload &amp; Ingest to Cache</span>";
+      }
+    };
+  }
 }
 
 // Fetch live backend configuration
