@@ -36,3 +36,4 @@ jobs:
       - name: Run Test Suite with Coverage
         run: |
           pytest -v --cov=core --cov=api --cov=db --cov-report=term-missing
+

@@ -34,8 +34,8 @@ class Settings(BaseSettings):
 
     # LLM Settings & Fallback
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
-    gemini_fallback_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_FALLBACK_MODEL")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_fallback_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_FALLBACK_MODEL")
     llm_timeout_seconds: float = Field(default=30.0, alias="LLM_TIMEOUT_SECONDS")
     llm_max_retries: int = Field(default=2, alias="LLM_MAX_RETRIES")
 

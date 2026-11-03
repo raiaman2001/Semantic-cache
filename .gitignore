@@ -10,4 +10,5 @@ htmlcov/
 *.png
 .mypy_cache/
 .ruff_cache/
+bench_qdrant/
 

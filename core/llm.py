@@ -33,7 +33,18 @@ class LLMService:
 
         import google.generativeai as genai
         genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(model_name)
+        system_instruction = (
+            "You are a friendly, knowledgeable, and intuitive AI assistant. "
+            "Always explain things in simple, easy-to-understand human language. "
+            "Avoid overly dense academic jargon or robotic corporate language unless specifically requested. "
+            "Use relatable real-world analogies, straightforward examples, and clean conversational formatting "
+            "(bullet points, clear short paragraphs, bold text for key ideas). "
+            "If the user asks in Hindi or Hinglish, respond in natural, polite, and fluent conversational Hinglish/Hindi."
+        )
+        model = genai.GenerativeModel(
+            model_name,
+            system_instruction=system_instruction
+        )
         response = model.generate_content(query, stream=True)
         for chunk in response:
             if chunk.text:
