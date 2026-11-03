@@ -1125,7 +1125,7 @@ function setupIntegrationPanel() {
 
       const t0 = performance.now();
       try {
-        const res = await fetch("/v1/chat/completions", {
+        let res = await fetch("/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1133,6 +1133,18 @@ function setupIntegrationPanel() {
             messages: [{ role: "user", content: query }]
           })
         });
+
+        // Fallback to /api/v1/chat/completions if root proxy prefix is under /api
+        if (res.status === 404) {
+          res = await fetch("/api/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "gpt-4o",
+              messages: [{ role: "user", content: query }]
+            })
+          });
+        }
 
         const elapsed = (performance.now() - t0).toFixed(1);
         const data = await res.json();
