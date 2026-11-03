@@ -758,7 +758,8 @@ function switchPanel(panelId) {
     "chat-panel": "Chat",
     "stats-panel": "Stats & Inspector",
     "entries-panel": "Cache Entries",
-    "lab-panel": "Lab & Benchmark"
+    "lab-panel": "Lab & Benchmark",
+    "integrate-panel": "Integration & SDKs"
   }[panelId] || "Semantic Cache";
 
   $("#topbar-heading").textContent = heading;
@@ -1074,6 +1075,88 @@ function setupEntriesAndLab() {
   };
 }
 
+// ============================================================================
+// 10. INTEGRATION PANEL & LIVE PROXY TESTER
+// ============================================================================
+function copyProxyUrl() {
+  const url = window.location.origin + "/v1";
+  copyText(url);
+}
+
+function copySnippet(lang) {
+  const codeEl = $(`#code-${lang}`);
+  if (codeEl) {
+    copyText(codeEl.innerText);
+  }
+}
+
+function setupIntegrationPanel() {
+  const proxyText = $("#proxy-url-text");
+  if (proxyText) {
+    proxyText.textContent = `${window.location.origin}/v1`;
+  }
+
+  // Language Tabs Switcher
+  $$("#sdk-tabs .sdk-tab-btn").forEach(btn => {
+    btn.onclick = () => {
+      $$("#sdk-tabs .sdk-tab-btn").forEach(b => b.classList.remove("active"));
+      $$(".sdk-snippet-content").forEach(c => c.classList.remove("active"));
+      btn.classList.add("active");
+      const target = $(`#snippet-${btn.dataset.lang}`);
+      if (target) target.classList.add("active");
+    };
+  });
+
+  // Live Tester Button
+  const testBtn = $("#btn-run-proxy-test");
+  if (testBtn) {
+    testBtn.onclick = async () => {
+      const qInput = $("#test-proxy-query");
+      const query = qInput ? qInput.value.trim() : "";
+      if (!query) {
+        toast("Enter a query to test", true);
+        return;
+      }
+
+      testBtn.disabled = true;
+      testBtn.textContent = "Testing /v1...";
+      const resultBox = $("#proxy-test-result");
+      if (resultBox) resultBox.style.display = "block";
+
+      const t0 = performance.now();
+      try {
+        const res = await fetch("/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: query }]
+          })
+        });
+
+        const elapsed = (performance.now() - t0).toFixed(1);
+        const data = await res.json();
+        const cacheHeader = res.headers.get("X-Cache") || "MISS (L3_llm)";
+
+        $("#proxy-res-status").textContent = `${res.status} ${res.statusText || 'OK'}`;
+        $("#proxy-res-cache").textContent = cacheHeader;
+        $("#proxy-res-ms").textContent = `${elapsed} ms`;
+        $("#proxy-res-json").textContent = JSON.stringify(data, null, 2);
+
+        toast(`Proxy test success: ${cacheHeader}`);
+      } catch (err) {
+        $("#proxy-res-status").textContent = "Error";
+        $("#proxy-res-cache").textContent = "N/A";
+        $("#proxy-res-json").textContent = JSON.stringify({ error: err.message }, null, 2);
+        toast("Proxy request failed: " + err.message, true);
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = "Test Endpoint";
+      }
+    };
+  }
+}
+
 // Fetch live backend configuration
 async function checkBackendConfig() {
   const cfgText = $("#cfg-text");
@@ -1107,6 +1190,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setupInspector();
   setupSidebarAndPanels();
   setupEntriesAndLab();
+  setupIntegrationPanel();
   setupScrollDetection();
   checkBackendConfig();
 });

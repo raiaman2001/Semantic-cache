@@ -3,7 +3,7 @@ import json
 import re
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,7 @@ from core.cache import (
     normalize_text,
 )
 from core.rerank import verify_lexical_consistency
+from scripts.evaluate import PAIRS as EVAL_PAIRS
 
 router = APIRouter()
 
@@ -34,6 +35,20 @@ def get_cache_service() -> SemanticCacheService:
 
 
 # Request / Response Schemas
+class ChatMessage(BaseModel):
+    role: str = "user"
+    content: str = ""
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str = "default"
+    messages: list[ChatMessage] = Field(default_factory=list)
+    stream: bool = False
+    temperature: float | None = 0.7
+    max_tokens: int | None = None
+    namespace: str = "default"
+
+
 class AskRequest(BaseModel):
     query: str = Field(..., max_length=settings.max_query_length)
     ns: str = Field(default="default")
@@ -138,9 +153,11 @@ async def ask_stream(r: AskRequest):
             level, ans, score, eid = hit
             meta = svc.log_and_record_metrics(r.query, r.ns, level, cat, ans, score, t0, eid, thr)
             yield ev({"meta": meta})
-            for word in re.findall(r"\S+\s*", ans):
-                yield ev({"t": word})
-                await asyncio.sleep(0.012)
+            # Ultra-fast bulk chunk streaming for cached hit
+            chunks = re.findall(r"(\S+(?:\s+\S+){0,7}\s*)", ans)
+            for chunk in chunks:
+                yield ev({"t": chunk})
+                await asyncio.sleep(0.001)
         else:
             parts: list[str] = []
             async for chunk in svc.llm.stream(r.query, r.model):
@@ -165,6 +182,132 @@ async def ask_stream(r: AskRequest):
         yield ev({"done": True})
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.post("/chat/completions")
+@router.post("/v1/chat/completions")
+async def chat_completions(r: ChatCompletionRequest):
+    svc = get_cache_service()
+
+    user_content = ""
+    for m in reversed(r.messages):
+        if m.role == "user" and m.content:
+            user_content = m.content
+            break
+    if not user_content and r.messages:
+        user_content = r.messages[-1].content
+
+    if not normalize_text(user_content):
+        raise HTTPException(status_code=400, detail="User message content is empty")
+
+    t0 = time.time()
+    cat = classify_category(user_content)
+    thr = svc.get_thresholds()
+    model_name = svc.settings.gemini_model
+    doc_ver = "v1"
+    key = compute_cache_key(r.namespace, model_name, doc_ver, user_content)
+
+    hit, vec = await svc.lookup(user_content, r.namespace, model_name, doc_ver, cat, thr, key)
+
+    cmpl_id = f"chatcmpl-sc-{int(time.time() * 1000)}"
+    created_ts = int(time.time())
+
+    if r.stream:
+        async def openai_event_generator():
+            if hit:
+                level, ans, score, eid = hit
+                svc.log_and_record_metrics(user_content, r.namespace, level, cat, ans, score, t0, eid, thr)
+                chunks = re.findall(r"(\S+(?:\s+\S+){0,7}\s*)", ans)
+                for chunk in chunks:
+                    chunk_data = {
+                        "id": cmpl_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": r.model,
+                        "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+                    }
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+                    await asyncio.sleep(0.001)
+            else:
+                parts: list[str] = []
+                async for chunk in svc.llm.stream(user_content, model_name):
+                    parts.append(chunk)
+                    chunk_data = {
+                        "id": cmpl_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": r.model,
+                        "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+                    }
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+                full_ans = "".join(parts)
+                if full_ans:
+                    await svc.store(user_content, full_ans, r.namespace, model_name, doc_ver, "", float(svc.settings.default_ttl), key, vec)
+                    svc.log_and_record_metrics(user_content, r.namespace, "L3_llm", cat, full_ans, 0.0, t0, None, thr)
+
+            stop_data = {
+                "id": cmpl_id,
+                "object": "chat.completion.chunk",
+                "created": created_ts,
+                "model": r.model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            }
+            yield f"data: {json.dumps(stop_data)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(openai_event_generator(), media_type="text/event-stream")
+
+    if hit:
+        level, ans, score, eid = hit
+        svc.log_and_record_metrics(user_content, r.namespace, level, cat, ans, score, t0, eid, thr)
+    else:
+        ans, shared = await svc.coalesce_generate(key, user_content, model_name)
+        new_eid = (
+            await svc.store(user_content, ans, r.namespace, model_name, doc_ver, "", float(svc.settings.default_ttl), key, vec)
+            if not shared
+            else None
+        )
+        svc.log_and_record_metrics(user_content, r.namespace, "L3_llm", cat, ans, 0.0, t0, new_eid, thr)
+        level = "L3_llm"
+        score = 0.0
+
+    prompt_tokens = max(1, len(user_content.split()))
+    completion_tokens = max(1, len(ans.split()))
+    elapsed_ms = round((time.time() - t0) * 1000, 1)
+
+    payload = {
+        "id": cmpl_id,
+        "object": "chat.completion",
+        "created": created_ts,
+        "model": r.model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": ans,
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+        "system_fingerprint": f"semantic_cache_{level}",
+    }
+
+    return Response(
+        content=json.dumps(payload),
+        media_type="application/json",
+        headers={
+            "X-Cache": f"HIT ({level})" if hit else "MISS (L3_llm)",
+            "X-Cache-Level": level,
+            "X-Cache-Score": str(score),
+            "X-Response-Time-Ms": str(elapsed_ms),
+        },
+    )
 
 
 @router.get("/stats")
@@ -275,29 +418,13 @@ def simulate(
     }
 
 
-PAIRS = [
-    ("How do I reset my password?", "I forgot my password, how can I change it?", 1),
-    ("What is RAG?", "Explain retrieval augmented generation", 1),
-    ("How to install Python on Windows", "Steps to set up Python on a Windows PC", 1),
-    ("What is the capital of France?", "Which city is France's capital?", 1),
-    ("How do I enable dark mode?", "How can I turn on the dark theme?", 1),
-    ("Best way to learn SQL fast", "Quickest method to study SQL", 1),
-    ("How do I enable notifications?", "How do I disable notifications?", 0),
-    ("Add a user to the group", "Remove a user from the group", 0),
-    ("What is machine learning?", "What is the weather in Delhi today?", 0),
-    ("How to install Docker", "How to uninstall Docker", 0),
-    ("Delete my account", "Deactivate my account", 0),
-    ("Explain Python lists", "Explain Java interfaces", 0),
-    ("Open a file in Python", "Close a file in Python", 0),
-]
-
-
 @router.get("/evaluate")
 def evaluate():
     import numpy as np
     svc = get_cache_service()
-    texts_a = [p[0] for p in PAIRS]
-    texts_b = [p[1] for p in PAIRS]
+    pairs = EVAL_PAIRS
+    texts_a = [p[0] for p in pairs]
+    texts_b = [p[1] for p in pairs]
 
     emb_a = svc.embedding.encode_sync(texts_a)
     emb_b = svc.embedding.encode_sync(texts_b)
@@ -305,24 +432,24 @@ def evaluate():
 
     reranker = svc.rerank.get_model()
     if reranker:
-        rr = [float(x) for x in reranker.predict([(p[0], p[1]) for p in PAIRS])]
+        rr = [float(x) for x in reranker.predict([(p[0], p[1]) for p in pairs])]
     else:
-        rr = [1.0] * len(PAIRS)
+        rr = [1.0] * len(pairs)
 
     ok = [
         verify_lexical_consistency(p[0], p[1]) and (rr[i] >= svc.rerank.min_score)
-        for i, p in enumerate(PAIRS)
+        for i, p in enumerate(pairs)
     ]
 
     out = []
-    pos = sum(p[2] for p in PAIRS)
+    pos = sum(p[2] for p in pairs)
     for t in np.arange(0.5, 0.99, 0.03):
         t_val = float(t)
-        tp = sum(1 for i, p in enumerate(PAIRS) if sims[i] >= t_val and p[2])
-        fp = sum(1 for i, p in enumerate(PAIRS) if sims[i] >= t_val and not p[2])
+        tp = sum(1 for i, p in enumerate(pairs) if sims[i] >= t_val and p[2])
+        fp = sum(1 for i, p in enumerate(pairs) if sims[i] >= t_val and not p[2])
 
-        tp2 = sum(1 for i, p in enumerate(PAIRS) if sims[i] >= t_val and p[2] and ok[i])
-        fp2 = sum(1 for i, p in enumerate(PAIRS) if sims[i] >= t_val and not p[2] and ok[i])
+        tp2 = sum(1 for i, p in enumerate(pairs) if sims[i] >= t_val and p[2] and ok[i])
+        fp2 = sum(1 for i, p in enumerate(pairs) if sims[i] >= t_val and not p[2] and ok[i])
 
         prec = tp / (tp + fp) if (tp + fp) else 1.0
         rec = tp / pos if pos else 0.0
@@ -350,7 +477,7 @@ def evaluate():
                 "rerank": round(rr[i], 3),
                 "pass": ok[i],
             }
-            for i, (a, b, y) in enumerate(PAIRS)
+            for i, (a, b, y) in enumerate(pairs)
         ],
     }
 

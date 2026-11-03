@@ -55,6 +55,10 @@
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.31"></path><path d="M14 9.3V2"></path><path d="M8.5 2h7"></path><path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path><path d="M5.52 16h12.96"></path></svg>
           <span>Lab & Benchmark</span>
         </button>
+        <button class="nav-item" data-panel="integrate-panel" role="tab" aria-selected="false" aria-controls="integrate-panel">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          <span>Integrate</span>
+        </button>
       </nav>
 
       <!-- Recent chats -->
@@ -295,6 +299,159 @@
               <button class="btn" id="dosim" style="align-self:flex-end;">Calculate savings</button>
             </div>
             <div id="simout" class="kpis" style="margin-top:16px"></div>
+          </div>
+        </section>
+
+        <!-- 5. Integration & API Panel -->
+        <section id="integrate-panel" class="app-panel panel-container" role="tabpanel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Chatbot & LLM Integration</h2>
+              <p class="panel-desc">Drop-in OpenAI-compatible proxy gateway. Connect any existing bot, LangChain agent, or private LLM in under 2 minutes.</p>
+            </div>
+            <div class="tag" style="background:var(--hit-l2);color:#fff;font-weight:600;padding:4px 10px;border-radius:var(--radius-full);font-size:12px;">OpenAI Compatible · v1</div>
+          </div>
+
+          <!-- Quick Drop-in Endpoint Card -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Drop-In Base URL</h3>
+              <span class="text-xs mute">Zero Codebase Architecture Changes</span>
+            </div>
+            <p class="text-sm mute" style="margin-bottom:12px;">Point any OpenAI SDK, LangChain, or custom client's <code>base_url</code> to this proxy address. All requests hit L1/L2 cache before falling back to your LLM.</p>
+            <div class="row align-center gap-sm" style="background:var(--bg-secondary);padding:10px 14px;border-radius:var(--radius-md);border:1px solid var(--border-subtle);">
+              <span style="font-family:var(--font-mono);font-size:13.5px;color:var(--text-primary);flex:1;" id="proxy-url-text">http://localhost:8000/v1</span>
+              <button class="btn" onclick="copyProxyUrl()" style="padding:6px 14px;font-size:12.5px;">Copy Base URL</button>
+            </div>
+          </div>
+
+          <!-- Code Snippets by Language -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Client SDK Snippets</h3>
+              <div class="row gap-xs" id="sdk-tabs">
+                <button class="sdk-tab-btn active" data-lang="python">Python (OpenAI)</button>
+                <button class="sdk-tab-btn" data-lang="langchain">LangChain</button>
+                <button class="sdk-tab-btn" data-lang="node">Node.js</button>
+                <button class="sdk-tab-btn" data-lang="curl">cURL</button>
+              </div>
+            </div>
+
+            <!-- Snippet Containers -->
+            <div id="snippet-python" class="sdk-snippet-content active">
+              <div class="code-block-wrapper">
+                <div class="code-block-header">
+                  <span>python</span>
+                  <button class="code-copy-btn" onclick="copySnippet('python')">Copy code</button>
+                </div>
+                <pre><code id="code-python">from openai import OpenAI
+
+# 1. Point client to your Semantic Cache Proxy
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed"  # Or your X-API-Key if security enabled
+)
+
+# 2. Call chat completions normally
+response = client.chat.completions.create(
+    model="gpt-4o",  # Or your model name
+    messages=[
+        {"role": "user", "content": "How do I reset my password?"}
+    ]
+)
+
+# 3. Print answer (Hits L1/L2 in &lt;15ms on repeated/similar queries!)
+print(response.choices[0].message.content)</code></pre>
+              </div>
+            </div>
+
+            <div id="snippet-langchain" class="sdk-snippet-content">
+              <div class="code-block-wrapper">
+                <div class="code-block-header">
+                  <span>python</span>
+                  <button class="code-copy-btn" onclick="copySnippet('langchain')">Copy code</button>
+                </div>
+                <pre><code id="code-langchain">from langchain_openai import ChatOpenAI
+
+# Drop-in LLM wrapper pointing to Semantic Cache
+llm = ChatOpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed",
+    model="gpt-4o"
+)
+
+# Automatically cached across all LangChain chains & agents
+response = llm.invoke("What is Retrieval-Augmented Generation?")
+print(response.content)</code></pre>
+              </div>
+            </div>
+
+            <div id="snippet-node" class="sdk-snippet-content">
+              <div class="code-block-wrapper">
+                <div class="code-block-header">
+                  <span>javascript</span>
+                  <button class="code-copy-btn" onclick="copySnippet('node')">Copy code</button>
+                </div>
+                <pre><code id="code-node">import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:8000/v1",
+  apiKey: "not-needed",
+});
+
+const completion = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "How to install Python on Windows?" }],
+});
+
+console.log(completion.choices[0].message.content);</code></pre>
+              </div>
+            </div>
+
+            <div id="snippet-curl" class="sdk-snippet-content">
+              <div class="code-block-wrapper">
+                <div class="code-block-header">
+                  <span>bash</span>
+                  <button class="code-copy-btn" onclick="copySnippet('curl')">Copy code</button>
+                </div>
+                <pre><code id="code-curl">curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      {"role": "user", "content": "How do I reset my password?"}
+    ]
+  }'</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live In-Browser Integration Playground -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Live Integration Tester</h3>
+              <span class="text-xs mute">Tests /v1/chat/completions</span>
+            </div>
+            <p class="text-sm mute" style="margin-bottom:12px;">Send queries directly to the <code>/v1/chat/completions</code> endpoint to verify headers, response formats, and cache hits.</p>
+            
+            <div class="row gap-sm" style="margin-bottom:12px;">
+              <input type="text" id="test-proxy-query" placeholder="Ask a test query (e.g. How do I reset my password?)" value="How do I reset my password?" style="flex:1;">
+              <button class="btn" id="btn-run-proxy-test">Test Endpoint</button>
+            </div>
+
+            <div id="proxy-test-result" style="display:none;background:var(--bg-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:14px;">
+              <div class="row justify-between align-center" style="margin-bottom:8px;font-size:12.5px;">
+                <div class="row align-center gap-xs">
+                  <span>Status:</span>
+                  <span id="proxy-res-status" class="tag" style="background:var(--hit-l2);color:#fff;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);font-size:11px;">200 OK</span>
+                </div>
+                <div class="row align-center gap-sm">
+                  <span>Cache: <strong id="proxy-res-cache" style="color:var(--accent);">HIT (L1_exact)</strong></span>
+                  <span>Latency: <strong id="proxy-res-ms">8.2 ms</strong></span>
+                </div>
+              </div>
+              <pre style="background:var(--bg-code);padding:10px 12px;border-radius:var(--radius-sm);overflow-x:auto;font-size:12.5px;color:var(--text-primary);max-height:220px;border:1px solid var(--border-subtle);"><code id="proxy-res-json"></code></pre>
+            </div>
           </div>
         </section>
       </main>
