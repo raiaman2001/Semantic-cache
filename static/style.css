@@ -255,17 +255,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 8px;
+  padding: 2px 4px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 13px;
-  cursor: pointer;
-  border: none;
   background: transparent;
   width: 100%;
-  text-align: left;
   transition: all var(--transition-fast);
   user-select: none;
+  position: relative;
 }
 .chat-item:hover {
   background: var(--bg-surface-hover);
@@ -277,27 +275,46 @@ body {
   font-weight: 500;
 }
 
+.chat-item-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 6px 6px;
+  color: inherit;
+  font-size: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  min-width: 0;
+}
+
 .chat-item-title {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 6px;
 }
 
 .chat-del-btn {
   background: none;
   border: none;
-  padding: 3px;
+  padding: 4px;
   border-radius: 4px;
   color: var(--text-muted);
   opacity: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
 }
-.chat-item:hover .chat-del-btn { opacity: 1; }
-.chat-del-btn:hover { color: var(--danger); }
+.chat-item:hover .chat-del-btn,
+.chat-del-btn:focus { opacity: 1; }
+.chat-del-btn:hover { color: var(--danger); background: var(--bg-surface-hover); }
 .chat-del-btn svg { width: 14px; height: 14px; }
 
 /* Sidebar Footer */

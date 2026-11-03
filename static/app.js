@@ -204,7 +204,10 @@ function createNewChat() {
 }
 
 function deleteChat(chatId, event) {
-  if (event) event.stopPropagation();
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
   STATE.chats = STATE.chats.filter(c => c.id !== chatId);
   saveChatsToStorage();
 
@@ -212,8 +215,7 @@ function deleteChat(chatId, event) {
     if (STATE.chats.length > 0) {
       STATE.currentChatId = STATE.chats[0].id;
     } else {
-      createNewChat();
-      return;
+      STATE.currentChatId = null;
     }
   }
   renderRecentChatsList();
@@ -248,12 +250,14 @@ function renderRecentChatsList() {
   }
 
   container.innerHTML = STATE.chats.map(c => `
-    <button class="chat-item ${c.id === STATE.currentChatId ? 'active' : ''}" onclick="selectChat('${c.id}')" aria-label="${escapeHtml(c.title)}">
-      <span class="chat-item-title">${escapeHtml(c.title)}</span>
-      <span class="chat-del-btn" onclick="deleteChat('${c.id}', event)" title="Delete conversation" aria-label="Delete conversation">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </span>
-    </button>
+    <div class="chat-item ${c.id === STATE.currentChatId ? 'active' : ''}">
+      <button type="button" class="chat-item-btn" onclick="selectChat('${c.id}')" aria-label="${escapeHtml(c.title)}">
+        <span class="chat-item-title">${escapeHtml(c.title)}</span>
+      </button>
+      <button type="button" class="chat-del-btn" onclick="event.stopPropagation(); deleteChat('${c.id}', event)" title="Delete conversation" aria-label="Delete conversation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
   `).join("");
 }
 
