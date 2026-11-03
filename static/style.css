@@ -116,7 +116,19 @@ body {
   display: flex;
   flex-direction: column;
   z-index: 100;
-  transition: transform var(--transition-normal);
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              visibility 0.22s;
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  border-right-color: transparent !important;
+  pointer-events: none !important;
+  visibility: hidden;
 }
 
 .sidebar-header {
@@ -254,16 +266,18 @@ body {
 .chat-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 13px;
   background: transparent;
   width: 100%;
+  border: none;
+  text-align: left;
+  cursor: pointer;
   transition: all var(--transition-fast);
   user-select: none;
-  position: relative;
+  font-family: inherit;
 }
 .chat-item:hover {
   background: var(--bg-surface-hover);
@@ -275,47 +289,12 @@ body {
   font-weight: 500;
 }
 
-.chat-item-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  background: transparent;
-  border: none;
-  padding: 6px 6px;
-  color: inherit;
-  font-size: inherit;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  overflow: hidden;
-  min-width: 0;
-}
-
 .chat-item-title {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.chat-del-btn {
-  background: none;
-  border: none;
-  padding: 4px;
-  border-radius: 4px;
-  color: var(--text-muted);
-  opacity: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all var(--transition-fast);
-}
-.chat-item:hover .chat-del-btn,
-.chat-del-btn:focus { opacity: 1; }
-.chat-del-btn:hover { color: var(--danger); background: var(--bg-surface-hover); }
-.chat-del-btn svg { width: 14px; height: 14px; }
 
 /* Sidebar Footer */
 .sidebar-footer {
@@ -423,13 +402,20 @@ body {
 }
 
 .hamburger-btn {
-  display: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
   padding: 6px;
   border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+.hamburger-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 .hamburger-btn svg { width: 20px; height: 20px; }
 

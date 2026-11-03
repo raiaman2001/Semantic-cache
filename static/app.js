@@ -239,7 +239,7 @@ function selectChat(chatId) {
   renderActiveChatMessages();
 
   // If on mobile, close sidebar drawer
-  closeSidebar();
+  if (isMobile()) closeSidebar();
 }
 
 function renderRecentChatsList() {
@@ -250,14 +250,9 @@ function renderRecentChatsList() {
   }
 
   container.innerHTML = STATE.chats.map(c => `
-    <div class="chat-item ${c.id === STATE.currentChatId ? 'active' : ''}">
-      <button type="button" class="chat-item-btn" onclick="selectChat('${c.id}')" aria-label="${escapeHtml(c.title)}">
-        <span class="chat-item-title">${escapeHtml(c.title)}</span>
-      </button>
-      <button type="button" class="chat-del-btn" onclick="event.stopPropagation(); deleteChat('${c.id}', event)" title="Delete conversation" aria-label="Delete conversation">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
-    </div>
+    <button type="button" class="chat-item ${c.id === STATE.currentChatId ? 'active' : ''}" onclick="selectChat('${c.id}')" aria-label="${escapeHtml(c.title)}">
+      <span class="chat-item-title">${escapeHtml(c.title)}</span>
+    </button>
   `).join("");
 }
 
@@ -772,27 +767,56 @@ function switchPanel(panelId) {
   if (panelId === "stats-panel") loadStats();
   if (panelId === "entries-panel") loadEntries();
 
-  closeSidebar();
+  if (isMobile()) closeSidebar();
+}
+
+function isMobile() {
+  return window.innerWidth <= 768;
 }
 
 function openSidebar() {
-  $("#sidebar").classList.add("open");
-  $("#sidebar-backdrop").classList.add("on");
+  if (isMobile()) {
+    $("#sidebar").classList.add("open");
+    $("#sidebar-backdrop").classList.add("on");
+  } else {
+    $("#sidebar").classList.remove("collapsed");
+  }
 }
 
 function closeSidebar() {
-  $("#sidebar").classList.remove("open");
-  $("#sidebar-backdrop").classList.remove("on");
+  if (isMobile()) {
+    $("#sidebar").classList.remove("open");
+    $("#sidebar-backdrop").classList.remove("on");
+  } else {
+    $("#sidebar").classList.add("collapsed");
+  }
+}
+
+function toggleSidebar() {
+  if (isMobile()) {
+    const isOpen = $("#sidebar").classList.contains("open");
+    if (isOpen) closeSidebar();
+    else openSidebar();
+  } else {
+    $("#sidebar").classList.toggle("collapsed");
+  }
 }
 
 function setupSidebarAndPanels() {
   $$(".nav-item").forEach(btn => {
-    btn.onclick = () => switchPanel(btn.dataset.panel);
+    btn.onclick = () => {
+      switchPanel(btn.dataset.panel);
+    };
   });
 
-  $("#hamburger-btn").onclick = openSidebar;
-  $("#sidebar-close-btn").onclick = closeSidebar;
-  $("#sidebar-backdrop").onclick = closeSidebar;
+  const hamburger = $("#hamburger-btn");
+  if (hamburger) hamburger.onclick = toggleSidebar;
+
+  const closeBtn = $("#sidebar-close-btn");
+  if (closeBtn) closeBtn.onclick = toggleSidebar;
+
+  const backdrop = $("#sidebar-backdrop");
+  if (backdrop) backdrop.onclick = closeSidebar;
 }
 
 // ============================================================================
