@@ -1145,11 +1145,21 @@ tr:hover td {
 }
 .btn.danger:hover { opacity: 0.9; }
 
-textarea, input {
+/* Global Input and Form Styling */
+input, select {
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--text-primary) !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  transition: all var(--transition-fast);
+}
+
+textarea {
   font-family: inherit;
   color: var(--text-primary);
-}
-textarea {
   width: 100%;
   min-height: 90px;
   background: var(--bg-surface);
@@ -1159,7 +1169,43 @@ textarea {
   font-size: 13.5px;
   resize: vertical;
 }
-textarea:focus { outline: none; border-color: var(--accent); }
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.8;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-subtle) !important;
+  color: var(--text-primary) !important;
+  background: var(--bg-surface) !important;
+}
+
+/* Chrome Autofill Text & Background Fix */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  -webkit-box-shadow: 0 0 0px 1000px var(--bg-surface) inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Reset Composer Textarea so it stays seamless inside composer-bar */
+.composer-bar textarea {
+  background: transparent !important;
+  border: none !important;
+  padding: 6px 4px !important;
+  min-height: 24px;
+  box-shadow: none !important;
+  color: var(--text-primary) !important;
+}
+.composer-bar textarea:focus {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
 
 /* ==========================================================================
    Request Inspector Drawer / Flyout
