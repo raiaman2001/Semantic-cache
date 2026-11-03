@@ -272,7 +272,6 @@ function renderActiveChatMessages() {
       <div id="empty-state" class="chat-empty-state">
         <div class="greeting-badge">⚡ Instant Semantic Acceleration</div>
         <h2 class="greeting-heading">Where should we start?</h2>
-        <p class="greeting-desc">Ask a question to see multi-tier caching in action. Repeated questions hit L1 in &lt;15ms; semantic rephrasings hit L2 with Qdrant and Cross-Encoder verification.</p>
 
         <div class="prompt-chips-grid">
           <button class="prompt-chip" data-query="How do I reset my password?">
